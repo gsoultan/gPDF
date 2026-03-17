@@ -3,3 +3,6 @@
 .idea/modules.xml
 .idea/vcs.xml
 docs/PDF_2.0_implementation_plan.md
+*.exe
+.idea
+go.sum
