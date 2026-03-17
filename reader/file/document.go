@@ -3,6 +3,7 @@ package file
 import (
 	"io"
 	"os"
+	"runtime"
 
 	"gpdf/model"
 	"gpdf/reader"
@@ -18,11 +19,17 @@ type Document struct {
 
 // NewDocument returns a Document that delegates read operations to doc and closes file on Close.
 func NewDocument(f *os.File, doc reader.Document) *Document {
-	return &Document{
+	d := &Document{
 		file: f,
 		doc:  doc,
 		w:    writer.NewPDFWriter(),
 	}
+	runtime.SetFinalizer(d, (*Document).finalize)
+	return d
+}
+
+func (d *Document) finalize() {
+	_ = d.Close()
 }
 
 // Catalog returns the document catalog.
@@ -65,8 +72,53 @@ func (d *Document) SaveWithPassword(w io.Writer, userPassword, ownerPassword str
 	return d.w.WriteWithPassword(w, d.doc, userPassword, ownerPassword)
 }
 
+// SaveWithAES256Password writes the document encrypted with AES-256.
+func (d *Document) SaveWithAES256Password(w io.Writer, userPassword, ownerPassword string) error {
+	return d.w.WriteWithAES256Password(w, d.doc, userPassword, ownerPassword)
+}
+
+// SaveLinearized writes a linearized (fast web view) PDF to ws.
+func (d *Document) SaveLinearized(ws writer.WriteSeeker) error {
+	return d.w.WriteLinearized(ws, d.doc)
+}
+
+// ReadContent returns all extracted text from the document.
+func (d *Document) ReadContent() (string, error) {
+	return d.doc.Content()
+}
+
+// Search returns, for each keyword, the 0-based page indices where it was found.
+func (d *Document) Search(keywords ...string) ([]model.SearchResult, error) {
+	perPage, err := reader.ExtractTextPerPage(d.doc)
+	if err != nil {
+		return nil, err
+	}
+	return reader.SearchPages(perPage, keywords...), nil
+}
+
+// Replace replaces all occurrences of old with new in content streams.
+func (d *Document) Replace(old, new string) error {
+	return reader.ReplaceContent(d.doc, old, new)
+}
+
+// Replaces applies multiple replacements to content streams.
+func (d *Document) Replaces(replacements map[string]string) error {
+	return reader.ReplacesContent(d.doc, replacements)
+}
+
+// Resolve returns the indirect object at the given reference.
+func (d *Document) Resolve(ref model.Ref) (model.Object, error) {
+	return d.doc.Resolve(ref)
+}
+
+// ObjectNumbers returns all indirect object numbers (for writing).
+func (d *Document) ObjectNumbers() []int {
+	return d.doc.ObjectNumbers()
+}
+
 // Close closes the underlying file. Idempotent.
 func (d *Document) Close() error {
+	runtime.SetFinalizer(d, nil)
 	if d.file == nil {
 		return nil
 	}

@@ -274,14 +274,13 @@ func (t *tokenizer) readNumber() (syntax.Token, error) {
 		if err != nil {
 			break
 		}
+		t.pos++
 		if (b >= '0' && b <= '9') || b == '+' || b == '-' {
 			buf.WriteByte(b)
-			t.pos++
 			continue
 		}
 		if b == '.' {
 			buf.WriteByte(b)
-			t.pos++
 			hasDot = true
 			continue
 		}
@@ -319,13 +318,13 @@ func (t *tokenizer) readKeywordOrRef() (syntax.Token, error) {
 		if err != nil {
 			break
 		}
+		t.pos++
 		if isWhitespace(b) || isDelimiter(b) {
 			t.buf.UnreadByte()
 			t.pos--
 			break
 		}
 		buf.WriteByte(b)
-		t.pos++
 	}
 	s := buf.String()
 	if k, ok := keywords[s]; ok {

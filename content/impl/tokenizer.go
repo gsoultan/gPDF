@@ -61,13 +61,24 @@ func (t *contentTokenizer) Next() (ctoken, error) {
 	case '(':
 		return t.readLiteralString()
 	case '<':
-		next, _ := t.r.ReadByte()
-		_ = t.r.UnreadByte()
-		if next == '<' {
-			_, _ = t.r.ReadByte()
-			return ctoken{kind: ctOp, value: "<<"}, nil
+		next, err := t.r.ReadByte()
+		if err != nil {
+			return ctoken{kind: ctOp, value: "<"}, nil
 		}
+		if next == '<' {
+			return ctoken{kind: ctLDict, value: "<<"}, nil
+		}
+		_ = t.r.UnreadByte()
 		return t.readHexString()
+	case '>':
+		next, err := t.r.ReadByte()
+		if err != nil || next != '>' {
+			if err == nil {
+				_ = t.r.UnreadByte()
+			}
+			return ctoken{kind: ctOp, value: ">"}, nil
+		}
+		return ctoken{kind: ctRDict, value: ">>"}, nil
 	case '[':
 		return ctoken{kind: ctLArray, value: "["}, nil
 	case ']':

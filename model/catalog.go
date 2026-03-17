@@ -38,3 +38,58 @@ func (c *Catalog) DestsRef() *Ref {
 	}
 	return nil
 }
+
+// AcroFormRef returns the /AcroForm (interactive form) dictionary reference if present.
+func (c *Catalog) AcroFormRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("AcroForm")].(Ref); ok {
+		return &v
+	}
+	return nil
+}
+
+// OCPropertiesRef returns the /OCProperties (optional content) dictionary reference if present.
+func (c *Catalog) OCPropertiesRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("OCProperties")].(Ref); ok {
+		return &v
+	}
+	return nil
+}
+
+// MarkInfoRef returns the /MarkInfo (tagged PDF) dictionary reference if present.
+func (c *Catalog) MarkInfoRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("MarkInfo")].(Ref); ok {
+		return &v
+	}
+	return nil
+}
+
+// StructTreeRootRef returns the /StructTreeRoot (structure tree) reference if present.
+func (c *Catalog) StructTreeRootRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("StructTreeRoot")].(Ref); ok {
+		return &v
+	}
+	return nil
+}
+
+// PermsRef returns the /Perms (document permissions, e.g. DocMDP for signatures) reference if present.
+func (c *Catalog) PermsRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("Perms")].(Ref); ok {
+		return &v
+	}
+	return nil
+}

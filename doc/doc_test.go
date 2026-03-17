@@ -29,6 +29,53 @@ func TestNewAndSave(t *testing.T) {
 	_ = doc.Close()
 }
 
+func TestSaveLinearized(t *testing.T) {
+	doc, err := New().Title("Linear").Author("gPDF").PageSize(595, 842).AddPage().AddPage().Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	path := filepath.Join(t.TempDir(), "linear.pdf")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.SaveLinearized(f); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Linearized PDF uses 1.4 and has /Linearized in first 1K
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(b, []byte("%PDF-1.4")) {
+		t.Errorf("linearized PDF should start with %%PDF-1.4, got %s", b[:min(20, len(b))])
+	}
+	if len(b) > 1024 {
+		b = b[:1024]
+	}
+	if !bytes.Contains(b, []byte("/Linearized")) {
+		t.Error("linearized PDF should contain /Linearized in first 1K")
+	}
+	// Open and verify structure
+	opened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	pages, err := opened.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Errorf("expected 2 pages, got %d", len(pages))
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.pdf")

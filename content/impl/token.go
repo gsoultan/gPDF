@@ -12,13 +12,15 @@ const (
 	ctHex    // < ... >
 	ctLArray // [
 	ctRArray // ]
+	ctLDict  // <<
+	ctRDict  // >>
 	ctOp     // operator name: q, Q, cm, BT, ET, Tf, Tj, etc.
 )
 
 // ctoken is a single content stream token.
 type ctoken struct {
-	kind  ctokenKind
-	value string
+	kind   ctokenKind
+	value  string
 	intVal int64
 	fltVal float64
 }

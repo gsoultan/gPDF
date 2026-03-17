@@ -11,7 +11,12 @@ import (
 	"gpdf/model"
 	"gpdf/security"
 	"gpdf/stream"
+	"gpdf/stream/asciihex"
+	"gpdf/stream/dct"
 	"gpdf/stream/flate"
+
+	ascii85filter "gpdf/stream/ascii85"
+	lzwfilter "gpdf/stream/lzw"
 )
 
 // PDFWriter implements Writer for PDF 2.0 output.
@@ -23,6 +28,10 @@ type PDFWriter struct {
 func NewPDFWriter() *PDFWriter {
 	reg := stream.NewRegistry()
 	reg.Register("FlateDecode", flate.NewFilter())
+	reg.Register("DCTDecode", dct.NewFilter())
+	reg.Register("LZWDecode", lzwfilter.NewFilter())
+	reg.Register("ASCII85Decode", ascii85filter.NewFilter())
+	reg.Register("ASCIIHexDecode", asciihex.NewFilter())
 	return &PDFWriter{filters: reg}
 }
 
@@ -33,7 +42,7 @@ func NewPDFWriterWithFilters(filters stream.FilterRegistry) *PDFWriter {
 
 // Write writes the document to w.
 func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
-	const header = "%PDF-2.0\n"
+	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
 	objNums := doc.ObjectNumbers()
 	sort.Ints(objNums)
 	offsets := make(map[int]int64)
@@ -74,7 +83,7 @@ func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 
 // WriteWithPassword writes the document encrypted with Standard handler (R=2) using user and owner passwords.
 func (pw *PDFWriter) WriteWithPassword(w io.Writer, doc Document, userPassword, ownerPassword string) error {
-	const header = "%PDF-2.0\n"
+	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
 	objNums := doc.ObjectNumbers()
 	if len(objNums) == 0 {
 		return fmt.Errorf("document has no objects")
@@ -87,6 +96,74 @@ func (pw *PDFWriter) WriteWithPassword(w io.Writer, doc Document, userPassword, 
 		return err
 	}
 	encDict, enc, err := security.BuildEncryptDictForWrite(userPassword, ownerPassword, id, -4)
+	if err != nil {
+		return err
+	}
+	trailerDict := copyTrailerWithEncrypt(doc.Trailer().Dict, encryptNum, id)
+	offsets := make(map[int]int64)
+	var body bytes.Buffer
+	ref := model.Ref{ObjectNumber: 0, Generation: 0}
+	for _, num := range objNums {
+		ref.ObjectNumber = num
+		ref.Generation = 0
+		obj, err := doc.Resolve(ref)
+		if err != nil {
+			return err
+		}
+		pos := int64(len(header)) + int64(body.Len())
+		offsets[num] = pos
+		if err := pw.writeIndirectObjectEnc(&body, num, 0, obj, enc); err != nil {
+			return err
+		}
+	}
+	pos := int64(len(header)) + int64(body.Len())
+	offsets[encryptNum] = pos
+	if err := pw.writeIndirectObjectEnc(&body, encryptNum, 0, encDict, nil); err != nil {
+		return err
+	}
+	allNums := append([]int{}, objNums...)
+	allNums = append(allNums, encryptNum)
+	sort.Ints(allNums)
+	maxNum = allNums[len(allNums)-1]
+	if _, err := io.WriteString(w, header); err != nil {
+		return err
+	}
+	if _, err := w.Write(body.Bytes()); err != nil {
+		return err
+	}
+	xrefStart := int64(len(header)) + int64(body.Len())
+	if err := pw.writeXRefTable(w, doc, nil, offsets, maxNum); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "trailer\n"); err != nil {
+		return err
+	}
+	if err := pw.writeDict(w, trailerDict); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\nstartxref\n%d\n%%%%EOF\n", xrefStart); err != nil {
+		return err
+	}
+	return nil
+}
+
+// WriteWithAES256Password writes the document encrypted with AES-256 using a
+// simplified Standard handler (V=5, R=6). This is intended as a stronger
+// alternative to WriteWithPassword while keeping the API similar.
+func (pw *PDFWriter) WriteWithAES256Password(w io.Writer, doc Document, userPassword, ownerPassword string) error {
+	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
+	objNums := doc.ObjectNumbers()
+	if len(objNums) == 0 {
+		return fmt.Errorf("document has no objects")
+	}
+	sort.Ints(objNums)
+	maxNum := objNums[len(objNums)-1]
+	encryptNum := maxNum + 1
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return err
+	}
+	encDict, enc, err := security.BuildAES256EncryptDictForWrite(userPassword, ownerPassword, id, -4)
 	if err != nil {
 		return err
 	}
@@ -174,9 +251,6 @@ func (pw *PDFWriter) writeObjectEnc(w io.Writer, obj model.Object, ref *model.Re
 			pw.writeHexString(w, cipher)
 			return nil
 		case *model.Stream:
-			if err := pw.writeDictEnc(w, v.Dict, ref, enc); err != nil {
-				return err
-			}
 			content := v.Content
 			if pw.filters != nil {
 				if filterObj := v.Dict[model.Name("Filter")]; filterObj != nil {
@@ -189,6 +263,14 @@ func (pw *PDFWriter) writeObjectEnc(w io.Writer, obj model.Object, ref *model.Re
 						}
 					}
 				}
+			}
+			streamDict := make(model.Dict, len(v.Dict))
+			for k, val := range v.Dict {
+				streamDict[k] = val
+			}
+			streamDict[model.Name("Length")] = model.Integer(int64(len(content)))
+			if err := pw.writeDictEnc(w, streamDict, ref, enc); err != nil {
+				return err
 			}
 			encrypted, err := enc.EncryptStream(*ref, content)
 			if err != nil {
@@ -389,12 +471,7 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 	case model.Dict:
 		return pw.writeDict(w, v)
 	case *model.Stream:
-		if err := pw.writeDict(w, v.Dict); err != nil {
-			return err
-		}
-		io.WriteString(w, "\nstream\n")
 		content := v.Content
-		// Only encode when the stream dict requests a filter (e.g. /Filter /FlateDecode).
 		if pw.filters != nil {
 			if filterObj := v.Dict[model.Name("Filter")]; filterObj != nil {
 				if name, ok := filterObj.(model.Name); ok {
@@ -407,6 +484,15 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 				}
 			}
 		}
+		streamDict := make(model.Dict, len(v.Dict))
+		for k, val := range v.Dict {
+			streamDict[k] = val
+		}
+		streamDict[model.Name("Length")] = model.Integer(int64(len(content)))
+		if err := pw.writeDict(w, streamDict); err != nil {
+			return err
+		}
+		io.WriteString(w, "\nstream\n")
 		w.Write(content)
 		if len(content) > 0 && content[len(content)-1] != '\n' {
 			io.WriteString(w, "\n")
@@ -420,18 +506,27 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 
 func (pw *PDFWriter) writeString(w io.Writer, s string) {
 	io.WriteString(w, "(")
-	for _, c := range s {
-		switch c {
+	for i := range len(s) {
+		b := s[i]
+		switch b {
 		case '\\', '(', ')':
-			fmt.Fprintf(w, "\\%c", c)
+			fmt.Fprintf(w, "\\%c", b)
 		case '\n':
 			io.WriteString(w, "\\n")
 		case '\r':
 			io.WriteString(w, "\\r")
 		case '\t':
 			io.WriteString(w, "\\t")
+		case '\b':
+			io.WriteString(w, "\\b")
+		case '\f':
+			io.WriteString(w, "\\f")
 		default:
-			io.WriteString(w, string(c))
+			if b < 0x20 || b > 0x7e {
+				fmt.Fprintf(w, "\\%03o", b)
+				continue
+			}
+			_, _ = w.Write([]byte{b})
 		}
 	}
 	io.WriteString(w, ")")

@@ -32,3 +32,23 @@ func (p Page) XObjects() (Dict, bool) {
 	v, ok := res[Name("XObject")].(Dict)
 	return v, ok
 }
+
+// Annots returns the /Annots array (annotation references) if present.
+func (p Page) Annots() (Array, bool) {
+	v, ok := p.Dict[Name("Annots")].(Array)
+	return v, ok
+}
+
+// StructParents returns the /StructParents integer used for the parent tree mapping, if present.
+func (p Page) StructParents() (Integer, bool) {
+	v, ok := p.Dict[Name("StructParents")].(Integer)
+	return v, ok
+}
+
+// SetStructParents sets the /StructParents integer on the page dictionary.
+func (p Page) SetStructParents(idx int) {
+	if p.Dict == nil {
+		p.Dict = Dict{}
+	}
+	p.Dict[Name("StructParents")] = Integer(int64(idx))
+}

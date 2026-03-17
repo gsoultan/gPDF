@@ -52,6 +52,8 @@ func (e *Encoder) writeObject(obj model.Object) error {
 		fmt.Fprintf(e.w, "%g", v)
 	case model.String:
 		writeLiteralString(e.w, string(v))
+	case model.HexString:
+		writeHexString(e.w, []byte(v))
 	case model.Name:
 		fmt.Fprintf(e.w, "/%s", escapeContentName(string(v)))
 	case model.Array:
@@ -65,6 +67,23 @@ func (e *Encoder) writeObject(obj model.Object) error {
 			}
 		}
 		e.w.WriteByte(']')
+	case model.Dict:
+		e.w.WriteString("<<")
+		first := true
+		for key, val := range v {
+			if !first {
+				e.w.WriteByte(' ')
+			}
+			first = false
+			if err := e.writeObject(key); err != nil {
+				return err
+			}
+			e.w.WriteByte(' ')
+			if err := e.writeObject(val); err != nil {
+				return err
+			}
+		}
+		e.w.WriteString(">>")
 	default:
 		return fmt.Errorf("content encode: unsupported type %T", obj)
 	}
@@ -88,6 +107,14 @@ func writeLiteralString(w io.Writer, s string) {
 		}
 	}
 	io.WriteString(w, ")")
+}
+
+func writeHexString(w io.Writer, b []byte) {
+	io.WriteString(w, "<")
+	for _, c := range b {
+		fmt.Fprintf(w, "%02X", c)
+	}
+	io.WriteString(w, ">")
 }
 
 func escapeContentName(s string) string {

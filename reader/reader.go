@@ -1,6 +1,10 @@
 package reader
 
-import "gpdf/model"
+import (
+	"io"
+
+	"gpdf/model"
+)
 
 // Document is the result of reading a PDF: access to catalog, pages, metadata, and resolved objects.
 type Document interface {
@@ -20,12 +24,14 @@ type Document interface {
 	Trailer() model.Trailer
 	// ObjectNumbers returns all indirect object numbers (for writing).
 	ObjectNumbers() []int
+	// Content returns all extracted text from the document (from all pages).
+	Content() (string, error)
 }
 
 // Reader reads a PDF from a random-access source into a Document.
 type Reader interface {
 	// ReadDocument parses the PDF from r (size bytes) and returns a Document.
-	ReadDocument(r interface{ ReadAt(p []byte, off int64) (n int, err error) }, size int64) (Document, error)
+	ReadDocument(r io.ReaderAt, size int64) (Document, error)
 	// ReadDocumentWithPassword parses the PDF and decrypts content using the user password (empty for none).
-	ReadDocumentWithPassword(r interface{ ReadAt(p []byte, off int64) (n int, err error) }, size int64, userPassword string) (Document, error)
+	ReadDocumentWithPassword(r io.ReaderAt, size int64, userPassword string) (Document, error)
 }

@@ -62,6 +62,14 @@ func (p *StreamParser) nextOp(tok *contentTokenizer, args *[]model.Object) (*con
 			*args = append(*args, arr)
 		case ctRArray:
 			return nil, fmt.Errorf("unexpected ]")
+		case ctLDict:
+			dict, err := p.parseDict(tok)
+			if err != nil {
+				return nil, err
+			}
+			*args = append(*args, dict)
+		case ctRDict:
+			return nil, fmt.Errorf("unexpected >>")
 		case ctOp:
 			name := t.value
 			operands := make([]model.Object, len(*args))
@@ -98,11 +106,67 @@ func (p *StreamParser) parseArray(tok *contentTokenizer) (model.Array, error) {
 				return nil, err
 			}
 			arr = append(arr, nested)
+		case ctLDict:
+			dict, err := p.parseDict(tok)
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, dict)
 		case ctRArray:
 			return arr, nil
 		case ctOp:
 			return nil, fmt.Errorf("operator %s inside array", t.value)
 		}
+	}
+}
+
+func (p *StreamParser) parseDict(tok *contentTokenizer) (model.Dict, error) {
+	dict := make(model.Dict)
+	for {
+		t, err := tok.Next()
+		if err != nil {
+			return nil, err
+		}
+		switch t.kind {
+		case ctEOF:
+			return nil, fmt.Errorf("dict not closed")
+		case ctRDict:
+			return dict, nil
+		case ctName:
+			key := model.Name(t.value)
+			val, err := p.parseDictValue(tok)
+			if err != nil {
+				return nil, err
+			}
+			dict[key] = val
+		default:
+			return nil, fmt.Errorf("dict key: expected name, got %v", t.kind)
+		}
+	}
+}
+
+func (p *StreamParser) parseDictValue(tok *contentTokenizer) (model.Object, error) {
+	t, err := tok.Next()
+	if err != nil {
+		return nil, err
+	}
+	switch t.kind {
+	case ctInteger:
+		return model.Integer(t.intVal), nil
+	case ctReal:
+		return model.Real(t.fltVal), nil
+	case ctName:
+		return model.Name(t.value), nil
+	case ctString:
+		return model.String(t.value), nil
+	case ctHex:
+		return model.String(t.value), nil
+	case ctLArray:
+		return p.parseArray(tok)
+	case ctLDict:
+		return p.parseDict(tok)
+	default:
+		return nil, fmt.Errorf("dict value: unexpected token %v %q", t.kind, t.value)
 	}
 }
 

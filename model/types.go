@@ -34,3 +34,9 @@ func (Array) IsIndirect() bool { return false }
 type Dict map[Name]Object
 
 func (Dict) IsIndirect() bool { return false }
+
+// HexString represents raw bytes written as a PDF hex string <...> in content streams.
+// Used for CID font text encoding where character codes are 2-byte glyph IDs.
+type HexString []byte
+
+func (HexString) IsIndirect() bool { return false }

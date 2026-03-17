@@ -306,7 +306,8 @@ func (p *ParserImpl) parseStream(dict model.Dict) (*model.Stream, error) {
 			if _, err2 := p.r.ReadAt(b2, offset+1); err2 == nil && b2[0] == '\n' {
 				skip = 2
 			}
-		} else if b[0] == '\n' {
+		}
+		if b[0] == '\n' {
 			skip = 1
 		}
 	}

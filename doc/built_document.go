@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"gpdf/model"
+	"gpdf/reader"
 	"gpdf/writer"
 )
 
@@ -73,6 +74,38 @@ func (d *builtDocument) Save(w io.Writer) error {
 func (d *builtDocument) SaveWithPassword(w io.Writer, userPassword, ownerPassword string) error {
 	pw := writer.NewPDFWriter()
 	return pw.WriteWithPassword(w, d, userPassword, ownerPassword)
+}
+
+// SaveWithAES256Password writes the document encrypted with AES-256. This is
+// a stronger alternative to SaveWithPassword while keeping a similar API.
+func (d *builtDocument) SaveWithAES256Password(w io.Writer, userPassword, ownerPassword string) error {
+	pw := writer.NewPDFWriter()
+	return pw.WriteWithAES256Password(w, d, userPassword, ownerPassword)
+}
+
+func (d *builtDocument) SaveLinearized(ws writer.WriteSeeker) error {
+	pw := writer.NewPDFWriter()
+	return pw.WriteLinearized(ws, d)
+}
+
+func (d *builtDocument) ReadContent() (string, error) {
+	return reader.ExtractText(d)
+}
+
+func (d *builtDocument) Search(keywords ...string) ([]model.SearchResult, error) {
+	perPage, err := reader.ExtractTextPerPage(d)
+	if err != nil {
+		return nil, err
+	}
+	return reader.SearchPages(perPage, keywords...), nil
+}
+
+func (d *builtDocument) Replace(old, new string) error {
+	return reader.ReplaceContent(d, old, new)
+}
+
+func (d *builtDocument) Replaces(replacements map[string]string) error {
+	return reader.ReplacesContent(d, replacements)
 }
 
 func (d *builtDocument) Close() error { return nil }
