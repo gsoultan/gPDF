@@ -25,14 +25,18 @@ type documentCore struct {
 	startXRefOffset int64
 	filters         stream.FilterRegistry
 	decryptor       security.Decryptor
+	version         PDFVersion
+	linearization   *LinearizationInfo
 
 	mu      sync.Mutex
 	objects map[model.Ref]model.Object
 }
 
-func (c *documentCore) Trailer() model.Trailer { return c.trailer }
-func (c *documentCore) StartXRefOffset() int64 { return c.startXRefOffset }
-func (c *documentCore) ObjectNumbers() []int   { return c.xref.ObjectNumbers() }
+func (c *documentCore) Trailer() model.Trailer            { return c.trailer }
+func (c *documentCore) StartXRefOffset() int64            { return c.startXRefOffset }
+func (c *documentCore) ObjectNumbers() []int              { return c.xref.ObjectNumbers() }
+func (c *documentCore) Version() PDFVersion               { return c.version }
+func (c *documentCore) Linearization() *LinearizationInfo { return c.linearization }
 
 // resolveRaw parses and returns the object at ref without decryption or caching (used for Encrypt dict).
 func (c *documentCore) resolveRaw(ref model.Ref) (model.Object, error) {

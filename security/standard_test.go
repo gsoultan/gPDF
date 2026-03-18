@@ -9,10 +9,10 @@ import (
 func TestNewStandardDecryptor_InvalidFilter(t *testing.T) {
 	d := model.Dict{
 		model.Name("Filter"): model.Name("Unknown"),
-		model.Name("R"):     model.Integer(2),
-		model.Name("O"):     model.String(string(make([]byte, 32))),
-		model.Name("U"):     model.String(string(make([]byte, 32))),
-		model.Name("P"):     model.Integer(-4),
+		model.Name("R"):      model.Integer(2),
+		model.Name("O"):      model.String(string(make([]byte, 32))),
+		model.Name("U"):      model.String(string(make([]byte, 32))),
+		model.Name("P"):      model.Integer(-4),
 	}
 	_, err := NewStandardDecryptor(d, nil, "user")
 	if err == nil {
@@ -21,12 +21,13 @@ func TestNewStandardDecryptor_InvalidFilter(t *testing.T) {
 }
 
 func TestNewStandardDecryptor_UnsupportedR(t *testing.T) {
+	// R=7 is not defined by the PDF specification and must return an error.
 	d := model.Dict{
 		model.Name("Filter"): model.Name("Standard"),
-		model.Name("R"):     model.Integer(4),
-		model.Name("O"):     model.String(string(make([]byte, 32))),
-		model.Name("U"):     model.String(string(make([]byte, 32))),
-		model.Name("P"):     model.Integer(-4),
+		model.Name("R"):      model.Integer(7),
+		model.Name("O"):      model.String(string(make([]byte, 32))),
+		model.Name("U"):      model.String(string(make([]byte, 32))),
+		model.Name("P"):      model.Integer(-4),
 	}
 	_, err := NewStandardDecryptor(d, nil, "user")
 	if err == nil {
@@ -37,8 +38,8 @@ func TestNewStandardDecryptor_UnsupportedR(t *testing.T) {
 func TestNewStandardDecryptor_MissingO(t *testing.T) {
 	d := model.Dict{
 		model.Name("Filter"): model.Name("Standard"),
-		model.Name("R"):     model.Integer(2),
-		model.Name("P"):     model.Integer(-4),
+		model.Name("R"):      model.Integer(2),
+		model.Name("P"):      model.Integer(-4),
 	}
 	_, err := NewStandardDecryptor(d, nil, "user")
 	if err == nil {
@@ -53,10 +54,10 @@ func TestDecryptor_DecryptString(t *testing.T) {
 	}
 	d := model.Dict{
 		model.Name("Filter"): model.Name("Standard"),
-		model.Name("R"):     model.Integer(2),
-		model.Name("O"):     model.String(string(o)),
-		model.Name("U"):     model.String(string(make([]byte, 32))),
-		model.Name("P"):     model.Integer(-4),
+		model.Name("R"):      model.Integer(2),
+		model.Name("O"):      model.String(string(o)),
+		model.Name("U"):      model.String(string(make([]byte, 32))),
+		model.Name("P"):      model.Integer(-4),
 	}
 	dec, err := NewStandardDecryptor(d, nil, "user")
 	if err != nil {

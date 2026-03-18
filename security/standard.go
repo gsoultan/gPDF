@@ -19,13 +19,14 @@ var padding32 = []byte{
 
 // StandardDecryptor implements Decryptor for PDF Standard security handler (R=2, R=3).
 type StandardDecryptor struct {
-	key      []byte
-	r        int
-	n        int // key length in bytes: 5 for R=2, 16 for R=3 with Length 128
+	key []byte
+	r   int
+	n   int // key length in bytes: 5 for R=2, 16 for R=3 with Length 128
 }
 
 // NewStandardDecryptor builds a decryptor from the Encrypt dict, trailer ID, and user password.
-// Supports R=2 (40-bit) and R=3 (128-bit when /Length 128). Returns nil, nil if password is wrong (U check not implemented).
+// Supports R=2 and R=3 (RC4), R=4 (AES-128 or RC4 per CF dict), R=5 (AES-256, PDF 1.7 ext 3),
+// and R=6 (AES-256, PDF 2.0).
 func NewStandardDecryptor(encryptDict model.Dict, id model.Array, userPassword string) (Decryptor, error) {
 	if encryptDict == nil {
 		return nil, fmt.Errorf("encrypt dict is nil")
@@ -35,9 +36,20 @@ func NewStandardDecryptor(encryptDict model.Dict, id model.Array, userPassword s
 		return nil, fmt.Errorf("unsupported Filter: %s", filter)
 	}
 	r := int(getInt(encryptDict, "R", 0))
-	if r < 2 || r > 3 {
+	switch {
+	case r == 4:
+		return newStandardR4Decryptor(encryptDict, id, userPassword)
+	case r == 5 || r == 6:
+		return newStandardR5R6Decryptor(encryptDict, id, userPassword, r)
+	case r == 2 || r == 3:
+		return newStandardR2R3Decryptor(encryptDict, id, userPassword, r)
+	default:
 		return nil, fmt.Errorf("unsupported R: %d", r)
 	}
+}
+
+// newStandardR2R3Decryptor handles legacy RC4-based R=2 (40-bit) and R=3 (up to 128-bit).
+func newStandardR2R3Decryptor(encryptDict model.Dict, id model.Array, userPassword string, r int) (Decryptor, error) {
 	length := int(getInt(encryptDict, "Length", 40))
 	if length != 40 && length != 128 {
 		length = 40

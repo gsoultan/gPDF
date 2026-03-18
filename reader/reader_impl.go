@@ -9,8 +9,13 @@ import (
 	"gpdf/security"
 	"gpdf/stream"
 	"gpdf/stream/asciihex"
+	"gpdf/stream/ccitt"
+	"gpdf/stream/crypt"
 	"gpdf/stream/dct"
 	"gpdf/stream/flate"
+	"gpdf/stream/jbig2"
+	"gpdf/stream/jpx"
+	"gpdf/stream/runlength"
 	"gpdf/syntax"
 	"gpdf/syntax/impl"
 	"gpdf/xref"
@@ -37,6 +42,11 @@ func NewPDFReader() *PDFReader {
 	reg.Register("LZWDecode", lzwfilter.NewFilter())
 	reg.Register("ASCII85Decode", ascii85filter.NewFilter())
 	reg.Register("ASCIIHexDecode", asciihex.NewFilter())
+	reg.Register("JPXDecode", jpx.NewFilter())
+	reg.Register("JBIG2Decode", jbig2.NewFilter())
+	reg.Register("CCITTFaxDecode", ccitt.NewFilter())
+	reg.Register("RunLengthDecode", runlength.NewFilter())
+	reg.Register("Crypt", crypt.NewFilter())
 	return &PDFReader{filters: reg}
 }
 
@@ -57,6 +67,14 @@ func (pr *PDFReader) ReadDocumentWithPassword(r io.ReaderAt, size int64, userPas
 }
 
 func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string) (Document, error) {
+	version, err := detectPDFVersion(r)
+	if err != nil {
+		return nil, err
+	}
+	linearization, err := detectLinearization(r, size)
+	if err != nil {
+		return nil, err
+	}
 	startXRef, err := findStartXRef(r, size)
 	if err != nil {
 		return nil, err
@@ -89,6 +107,8 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 			startXRefOffset: startXRef,
 			objects:         make(map[model.Ref]model.Object),
 			filters:         pr.filters,
+			version:         version,
+			linearization:   linearization,
 		},
 	}
 	if encRef := trailer.Encrypt(); encRef != nil {
@@ -144,7 +164,17 @@ func (pr *PDFReader) parseXRefChain(r io.ReaderAt, size, offset int64) (map[int]
 }
 
 // parseXRef dispatches to table or stream parsing based on file content at offset.
+// If both approaches fail, it falls back to a full-file scan to rebuild the XRef.
 func (pr *PDFReader) parseXRef(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
+	entries, dict, err := pr.tryParseXRef(r, size, offset)
+	if err != nil {
+		return pr.repairXRef(r, size, err)
+	}
+	return entries, dict, nil
+}
+
+// tryParseXRef attempts normal XRef parsing (table or stream) at the given offset.
+func (pr *PDFReader) tryParseXRef(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
 	var buf [4]byte
 	n, err := r.ReadAt(buf[:], offset)
 	if err != nil && err != io.EOF {
@@ -154,6 +184,15 @@ func (pr *PDFReader) parseXRef(r io.ReaderAt, size, offset int64) (map[int]synta
 		return pr.parseXRefTable(r, size, offset)
 	}
 	return pr.parseXRefStream(r, size, offset)
+}
+
+// repairXRef rebuilds the XRef by scanning the file when normal parsing fails.
+func (pr *PDFReader) repairXRef(r io.ReaderAt, size int64, originalErr error) (map[int]syntax.XRefEntry, model.Dict, error) {
+	repaired, scanErr := rebuildXRefByScan(r, size)
+	if scanErr != nil {
+		return nil, nil, fmt.Errorf("xref parse failed (%w); repair scan also failed: %v", originalErr, scanErr)
+	}
+	return repaired, model.Dict{}, nil
 }
 
 func (pr *PDFReader) parseXRefTable(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
