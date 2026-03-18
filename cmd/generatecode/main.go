@@ -26,7 +26,7 @@ func main() {
 	}
 	defer pdf.Close()
 
-	generated, err := pdf.GenerateCode(doc.CodeGenOptions{
+	assets, err := pdf.GenerateCodeTo(os.Stdout, doc.CodeGenOptions{
 		PackageName:        "main",
 		FunctionName:       "BuildPDF",
 		EmbedImages:        true,
@@ -34,11 +34,13 @@ func main() {
 		PreserveTextStyles: true,
 		PreservePositions:  true,
 		PreserveTables:     true,
+		InlineImageLimit:   128 * 1024,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "GenerateCode: %v\n", err)
+		fmt.Fprintf(os.Stderr, "GenerateCodeTo: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println(generated.GoSource)
+	if len(assets) > 0 {
+		fmt.Fprintf(os.Stderr, "\n// %d external assets were generated\n", len(assets))
+	}
 }

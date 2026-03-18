@@ -32,32 +32,31 @@ func ExtractImagesPerPage(src contentSource) ([][]ImageInfo, error) {
 	parser := contentimpl.NewStreamParser()
 	result := make([][]ImageInfo, len(pages))
 	for i, page := range pages {
-		result[i] = extractImagesFromPage(src, parser, page, i)
+		result[i] = extractImagesFromPage(src, parser, page, i, 0, 0, 0)
 	}
 	return result, nil
 }
 
-func extractImagesFromPage(src contentSource, parser content.Parser, page model.Page, pageIdx int) []ImageInfo {
+func extractImagesFromPage(src contentSource, parser content.Parser, page model.Page, pageIdx int, maxDecodedBytes int, maxOps int, maxImageBytes int) []ImageInfo {
 	resources, ok := page.Resources()
 	if !ok {
 		return nil
 	}
-	raw, err := pageContentBytes(src, page)
-	if err != nil || len(raw) == 0 {
-		return fallbackImagesFromResources(src, page, pageIdx)
+	ops, err := pageContentOps(src, parser, page, maxDecodedBytes, maxOps)
+	if err != nil || len(ops) == 0 {
+		return fallbackImagesFromResources(src, page, pageIdx, maxImageBytes)
 	}
-	ops, err := parser.Parse(raw)
-	if err != nil {
-		return fallbackImagesFromResources(src, page, pageIdx)
-	}
-	images := extractImagesFromOps(ops, src, parser, resources, pageIdx, identityMatrix(), make(map[model.Ref]struct{}, 4))
+	images := extractImagesFromOps(ops, src, parser, resources, pageIdx, identityMatrix(), make(map[model.Ref]struct{}, 4), maxImageBytes)
 	if len(images) == 0 {
-		return fallbackImagesFromResources(src, page, pageIdx)
+		return fallbackImagesFromResources(src, page, pageIdx, maxImageBytes)
 	}
 	return images
 }
 
-func imageInfoFromStream(s *model.Stream, name string, pageIdx int) ImageInfo {
+func imageInfoFromStream(s *model.Stream, name string, pageIdx int, maxImageBytes int) (ImageInfo, bool) {
+	if maxImageBytes > 0 && len(s.Content) > maxImageBytes {
+		return ImageInfo{}, false
+	}
 	info := ImageInfo{
 		Name: name,
 		Page: pageIdx,
@@ -105,10 +104,10 @@ func imageInfoFromStream(s *model.Stream, name string, pageIdx int) ImageInfo {
 	info.Format = detectImageFormat(info.Filter, s.Content)
 
 	info.Data = s.Content
-	return info
+	return info, true
 }
 
-func fallbackImagesFromResources(src contentSource, page model.Page, pageIdx int) []ImageInfo {
+func fallbackImagesFromResources(src contentSource, page model.Page, pageIdx int, maxImageBytes int) []ImageInfo {
 	xObjects, ok := page.XObjects()
 	if !ok {
 		res, ok2 := page.Resources()
@@ -135,7 +134,9 @@ func fallbackImagesFromResources(src contentSource, page model.Page, pageIdx int
 		if subtype != "Image" {
 			continue
 		}
-		images = append(images, imageInfoFromStream(stream, string(name), pageIdx))
+		if image, ok := imageInfoFromStream(stream, string(name), pageIdx, maxImageBytes); ok {
+			images = append(images, image)
+		}
 	}
 	return images
 }
@@ -157,6 +158,7 @@ func extractImagesFromOps(
 	pageIdx int,
 	baseCTM matrix,
 	visited map[model.Ref]struct{},
+	maxImageBytes int,
 ) []ImageInfo {
 	state := newImageState()
 	state.ctm = baseCTM
@@ -176,7 +178,7 @@ func extractImagesFromOps(
 				state.ctm = state.ctm.multiply(matrixFromObjects(op.Args))
 			}
 		case "Do":
-			images = append(images, extractImagesFromXObject(op.Args, src, parser, resources, pageIdx, state.ctm, visited)...)
+			images = append(images, extractImagesFromXObject(op.Args, src, parser, resources, pageIdx, state.ctm, visited, maxImageBytes)...)
 		}
 	}
 	return images
@@ -190,6 +192,7 @@ func extractImagesFromXObject(
 	pageIdx int,
 	ctm matrix,
 	visited map[model.Ref]struct{},
+	maxImageBytes int,
 ) []ImageInfo {
 	if len(args) == 0 || resources == nil {
 		return nil
@@ -213,7 +216,10 @@ func extractImagesFromXObject(
 	subtype, _ := stream.Dict[model.Name("Subtype")].(model.Name)
 	switch subtype {
 	case "Image":
-		image := imageInfoFromStream(stream, string(name), pageIdx)
+		image, ok := imageInfoFromStream(stream, string(name), pageIdx, maxImageBytes)
+		if !ok {
+			return nil
+		}
 		applyImagePlacement(&image, ctm)
 		return []ImageInfo{image}
 	case "Form":
@@ -236,7 +242,7 @@ func extractImagesFromXObject(
 		if formArray, ok := stream.Dict[model.Name("Matrix")].(model.Array); ok {
 			formMatrix = matrixFromObjects(formArray)
 		}
-		return extractImagesFromOps(nestedOps, src, parser, nestedResources, pageIdx, ctm.multiply(formMatrix), visited)
+		return extractImagesFromOps(nestedOps, src, parser, nestedResources, pageIdx, ctm.multiply(formMatrix), visited, maxImageBytes)
 	}
 	return nil
 }

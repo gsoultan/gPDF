@@ -112,6 +112,11 @@ func (d *Document) GenerateCode(opts reader.CodeGenOptions) (reader.GeneratedCod
 	return d.doc.GenerateCode(opts)
 }
 
+// GenerateCodeTo reconstructs the opened PDF into Go builder source and writes it to w.
+func (d *Document) GenerateCodeTo(w io.Writer, opts reader.CodeGenOptions) ([]reader.GeneratedAsset, error) {
+	return d.doc.GenerateCodeTo(w, opts)
+}
+
 // ReadTables detects table-like grids from the page layout and returns them grouped by page.
 func (d *Document) ReadTables() ([][]reader.Table, error) {
 	return d.doc.Tables()

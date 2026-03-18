@@ -3,6 +3,7 @@ package reader
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -68,16 +69,12 @@ func ExtractTextPerPage(src contentSource) ([]string, error) {
 	out := make([]string, len(pages))
 	parser := contentimpl.NewStreamParser()
 	for i, page := range pages {
-		raw, err := pageContentBytes(src, page)
-		if err != nil || len(raw) == 0 {
-			continue
-		}
-		ops, err := parser.Parse(raw)
-		if err != nil {
+		ops, err := pageContentOps(src, parser, page, 0, 0)
+		if err != nil || len(ops) == 0 {
 			continue
 		}
 		var sb strings.Builder
-		sb.Grow(len(raw) / 2)
+		sb.Grow(len(ops) * 4)
 		resources, _ := page.Resources()
 		extractTextFromOps(
 			&sb,
@@ -132,6 +129,63 @@ func pageContentBytes(src contentSource, page model.Page) ([]byte, error) {
 		return raw, nil
 	}
 	return nil, nil
+}
+
+func pageContentOps(src contentSource, parser content.Parser, page model.Page, maxDecodedBytes int, maxOps int) ([]content.Op, error) {
+	contentsObj := page.Contents()
+	if contentsObj == nil {
+		return nil, nil
+	}
+	ctx := pageOpsContext{src: src, parser: parser, maxDecodedBytes: maxDecodedBytes, maxOps: maxOps}
+	return ctx.parse(contentsObj)
+}
+
+type pageOpsContext struct {
+	src             contentSource
+	parser          content.Parser
+	maxDecodedBytes int
+	maxOps          int
+	decodedBytes    int
+	opsCount        int
+}
+
+func (ctx *pageOpsContext) parse(obj model.Object) ([]content.Op, error) {
+	switch value := obj.(type) {
+	case model.Ref, *model.Stream, model.Stream:
+		streamObj, _, ok := resolveStreamObject(ctx.src, value)
+		if !ok || streamObj == nil || len(streamObj.Content) == 0 {
+			return nil, nil
+		}
+		if ctx.maxDecodedBytes > 0 {
+			ctx.decodedBytes += len(streamObj.Content)
+			if ctx.decodedBytes > ctx.maxDecodedBytes {
+				return nil, fmt.Errorf("decoded page content exceeds limit (%d bytes)", ctx.maxDecodedBytes)
+			}
+		}
+		ops, err := ctx.parser.Parse(streamObj.Content)
+		if err != nil {
+			return nil, err
+		}
+		if ctx.maxOps > 0 {
+			ctx.opsCount += len(ops)
+			if ctx.opsCount > ctx.maxOps {
+				return nil, fmt.Errorf("page operation count exceeds limit (%d)", ctx.maxOps)
+			}
+		}
+		return ops, nil
+	case model.Array:
+		all := make([]content.Op, 0, len(value)*32)
+		for _, item := range value {
+			ops, err := ctx.parse(item)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, ops...)
+		}
+		return all, nil
+	default:
+		return nil, nil
+	}
 }
 
 // SearchPages finds keywords in per-page text and returns SearchResults.

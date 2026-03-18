@@ -348,6 +348,76 @@ func TestExtractLayout_TdUpdatesPosition(t *testing.T) {
 	}
 }
 
+func TestExtractVectors_TracksLinesAndRects(t *testing.T) {
+	stream := []byte("0 0 1 RG 10 20 m 110 20 l S 1 0 0 rg 30 40 50 60 re f")
+	contentRef := model.Ref{ObjectNumber: 140, Generation: 0}
+	src := stubContentSource{
+		pages:   []model.Page{makePageWithContent(contentRef, nil)},
+		objects: map[model.Ref]model.Object{contentRef: &model.Stream{Content: stream}},
+	}
+
+	perPage, err := ExtractVectorsPerPage(src)
+	if err != nil {
+		t.Fatalf("ExtractVectorsPerPage error: %v", err)
+	}
+	if len(perPage) != 1 {
+		t.Fatalf("expected one page result, got %d", len(perPage))
+	}
+	shapes := perPage[0]
+	if len(shapes) != 2 {
+		t.Fatalf("expected 2 shapes, got %d", len(shapes))
+	}
+
+	line := shapes[0]
+	if line.Kind != "line" {
+		t.Fatalf("first shape kind: got %q, want line", line.Kind)
+	}
+	if line.X1 != 10 || line.Y1 != 20 || line.X2 != 110 || line.Y2 != 20 {
+		t.Fatalf("line coords: got (%v,%v)->(%v,%v), want (10,20)->(110,20)", line.X1, line.Y1, line.X2, line.Y2)
+	}
+	if !line.Stroke || line.Fill {
+		t.Fatalf("line paint flags: stroke=%v fill=%v, want stroke=true fill=false", line.Stroke, line.Fill)
+	}
+	if line.StrokeColor.B != 1 {
+		t.Fatalf("line stroke color B: got %v, want 1", line.StrokeColor.B)
+	}
+
+	rect := shapes[1]
+	if rect.Kind != "rect" {
+		t.Fatalf("second shape kind: got %q, want rect", rect.Kind)
+	}
+	if rect.X1 != 30 || rect.Y1 != 40 || rect.X2 != 80 || rect.Y2 != 100 {
+		t.Fatalf("rect bounds: got (%v,%v)-(%v,%v), want (30,40)-(80,100)", rect.X1, rect.Y1, rect.X2, rect.Y2)
+	}
+	if rect.Stroke || !rect.Fill {
+		t.Fatalf("rect paint flags: stroke=%v fill=%v, want stroke=false fill=true", rect.Stroke, rect.Fill)
+	}
+	if rect.FillColor.R != 1 {
+		t.Fatalf("rect fill color R: got %v, want 1", rect.FillColor.R)
+	}
+}
+
+func TestExtractVectors_AppliesCTM(t *testing.T) {
+	stream := []byte("2 0 0 2 5 6 cm 1 1 m 3 1 l S")
+	contentRef := model.Ref{ObjectNumber: 141, Generation: 0}
+	src := stubContentSource{
+		pages:   []model.Page{makePageWithContent(contentRef, nil)},
+		objects: map[model.Ref]model.Object{contentRef: &model.Stream{Content: stream}},
+	}
+
+	perPage, err := ExtractVectorsPerPage(src)
+	if err != nil {
+		t.Fatalf("ExtractVectorsPerPage error: %v", err)
+	}
+	if len(perPage) != 1 || len(perPage[0]) != 1 {
+		t.Fatalf("expected one transformed line shape, got %+v", perPage)
+	}
+	line := perPage[0][0]
+	if line.X1 != 7 || line.Y1 != 8 || line.X2 != 11 || line.Y2 != 8 {
+		t.Fatalf("transformed coords: got (%v,%v)->(%v,%v), want (7,8)->(11,8)", line.X1, line.Y1, line.X2, line.Y2)
+	}
+}
+
 // ── Table detection tests ─────────────────────────────────────────────────────
 
 func TestDetectTables_DetectsSimpleGrid(t *testing.T) {

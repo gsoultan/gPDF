@@ -113,6 +113,10 @@ func (d *builtDocument) GenerateCode(opts CodeGenOptions) (GeneratedCode, error)
 	return reader.GenerateCode(d, opts)
 }
 
+func (d *builtDocument) GenerateCodeTo(w io.Writer, opts CodeGenOptions) ([]GeneratedAsset, error) {
+	return reader.GenerateCodeTo(d, w, opts)
+}
+
 func (d *builtDocument) ReadTables() ([][]reader.Table, error) {
 	layouts, err := reader.ExtractLayout(d)
 	if err != nil {

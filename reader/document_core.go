@@ -28,8 +28,10 @@ type documentCore struct {
 	version         PDFVersion
 	linearization   *LinearizationInfo
 
-	mu      sync.Mutex
-	objects map[model.Ref]model.Object
+	mu         sync.Mutex
+	objects    map[model.Ref]model.Object
+	cacheOrder []model.Ref
+	cacheLimit int
 }
 
 func (c *documentCore) Trailer() model.Trailer            { return c.trailer }
@@ -96,10 +98,27 @@ func (c *documentCore) Resolve(ref model.Ref) (model.Object, error) {
 	}
 
 	c.mu.Lock()
+	if cached, ok := c.objects[ref]; ok {
+		c.mu.Unlock()
+		return cached, nil
+	}
 	c.objects[ref] = obj
+	c.cacheOrder = append(c.cacheOrder, ref)
+	c.enforceObjectCacheLimitLocked()
 	c.mu.Unlock()
 
 	return obj, nil
+}
+
+func (c *documentCore) enforceObjectCacheLimitLocked() {
+	if c.cacheLimit <= 0 {
+		return
+	}
+	for len(c.cacheOrder) > c.cacheLimit {
+		oldest := c.cacheOrder[0]
+		c.cacheOrder = c.cacheOrder[1:]
+		delete(c.objects, oldest)
+	}
 }
 
 func (c *documentCore) resolveIndirect(ref model.Ref, e xref.Entry) (model.Object, error) {

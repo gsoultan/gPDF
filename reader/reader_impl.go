@@ -29,6 +29,8 @@ var (
 	startXRefMarker = []byte("startxref")
 )
 
+const defaultObjectCacheLimit = 16_384
+
 // PDFReader implements Reader using the syntax parser and xref.
 type PDFReader struct {
 	filters stream.FilterRegistry
@@ -106,6 +108,8 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 			trailer:         trailer,
 			startXRefOffset: startXRef,
 			objects:         make(map[model.Ref]model.Object),
+			cacheOrder:      make([]model.Ref, 0, 512),
+			cacheLimit:      defaultObjectCacheLimit,
 			filters:         pr.filters,
 			version:         version,
 			linearization:   linearization,

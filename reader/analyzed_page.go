@@ -7,4 +7,5 @@ type AnalyzedPage struct {
 	Blocks []TextBlock
 	Images []ImageInfo
 	Tables []Table
+	Shapes []VectorShape
 }
