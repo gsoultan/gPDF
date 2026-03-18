@@ -8,6 +8,9 @@ import (
 
 // Build returns a Document that can be saved. The document is in-memory.
 func (b *DocumentBuilder) Build() (Document, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
 	objs := make(map[int]model.Object)
 	nextNum := 1
 
@@ -17,7 +20,7 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	nextNum++
 
 	pageNums, pageRefs := b.allocatePageNums(nextNum)
-	nextNum += len(b.pages)
+	nextNum += len(b.pc.pages)
 
 	nextNum = b.buildMinimalStream(objs, nextNum)
 	minimalStreamNum := nextNum - 1
@@ -30,7 +33,7 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	pagesDict := model.Dict{
 		model.Name("Type"):  model.Name("Pages"),
 		model.Name("Kids"):  pageRefs,
-		model.Name("Count"): model.Integer(len(b.pages)),
+		model.Name("Count"): model.Integer(len(b.pc.pages)),
 	}
 	objs[pagesNum] = pagesDict
 
@@ -69,8 +72,8 @@ func (b *DocumentBuilder) Build() (Document, error) {
 
 // allocatePageNums returns object numbers and refs for all pages.
 func (b *DocumentBuilder) allocatePageNums(startNum int) (pageNums []int, pageRefs model.Array) {
-	pageNums = make([]int, 0, len(b.pages))
-	for i := range b.pages {
+	pageNums = make([]int, 0, len(b.pc.pages))
+	for i := range b.pc.pages {
 		num := startNum + i
 		pageNums = append(pageNums, num)
 		pageRefs = append(pageRefs, model.Ref{ObjectNumber: num, Generation: 0})
@@ -91,9 +94,9 @@ func (b *DocumentBuilder) buildMinimalStream(objs map[int]model.Object, nextNum 
 // buildPageObjects builds page dicts, content streams, image XObjects, and link annotations.
 func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums []int, pagesNum, minimalStreamNum, nextNum int) (int, error) {
 	for idx, pageNum := range pageNums {
-		spec := b.pages[idx]
-		pageDict := copyPageDict(spec.dict)
-		hasContent := len(spec.textRuns) > 0 || len(spec.imageRuns) > 0 || len(spec.graphicRuns) > 0
+		spec := b.pc.pages[idx]
+		pageDict := copyPageDict(spec.Dict)
+		hasContent := len(spec.TextRuns) > 0 || len(spec.ImageRuns) > 0 || len(spec.GraphicRuns) > 0
 
 		if !hasContent {
 			pageDict[model.Name("Contents")] = model.Ref{ObjectNumber: minimalStreamNum, Generation: 0}
@@ -103,13 +106,13 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 		} else {
 			contentStreamNum := nextNum
 			nextNum++
-			imageStreamNums := make([]int, len(spec.imageRuns))
-			for i := range spec.imageRuns {
+			imageStreamNums := make([]int, len(spec.ImageRuns))
+			for i := range spec.ImageRuns {
 				imageStreamNums[i] = nextNum
 				nextNum++
 			}
-			contentBytes, resources, buildErr := b.buildPageContent(spec.graphicRuns, spec.textRuns, spec.imageRuns, imageStreamNums)
-			if buildErr != nil && buildErr != errFlateCompressed {
+			contentBytes, resources, buildErr := b.buildPageContent(&b.pc.pages[idx], 0, imageStreamNums)
+			if buildErr != nil {
 				return nextNum, fmt.Errorf("page %d: %w", idx+1, buildErr)
 			}
 			pageDict[model.Name("Contents")] = model.Ref{ObjectNumber: contentStreamNum, Generation: 0}
@@ -122,15 +125,15 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 				pageDict[model.Name("Resources")] = resources
 			}
 			streamDict := model.Dict{model.Name("Length"): model.Integer(len(contentBytes))}
-			if buildErr == errFlateCompressed {
+			if !b.noCompressContent {
 				streamDict[model.Name("Filter")] = model.Name("FlateDecode")
 			}
 			objs[contentStreamNum] = &model.Stream{
 				Dict:    streamDict,
 				Content: contentBytes,
 			}
-			for i, im := range spec.imageRuns {
-				if im.isJPEG {
+			for i, im := range spec.ImageRuns {
+				if im.IsJPEG {
 					objs[imageStreamNums[i]] = b.jpegXObjectStream(im)
 				} else {
 					objs[imageStreamNums[i]] = b.imageXObjectStream(im)
@@ -205,7 +208,7 @@ func (b *DocumentBuilder) buildICCOutputIntent(objs map[int]model.Object, catalo
 // buildEmbeddedFonts creates CID font objects and replaces placeholder refs in page resources.
 func (b *DocumentBuilder) buildEmbeddedFonts(objs map[int]model.Object, nextNum int) int {
 	embeddedFontObjNums := make(map[string]int)
-	for psName, usage := range b.embeddedFonts {
+	for psName, usage := range b.fc.embeddedFonts {
 		if len(usage.usedGIDs) == 0 {
 			continue
 		}

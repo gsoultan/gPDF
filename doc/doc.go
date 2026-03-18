@@ -3,6 +3,9 @@ package doc
 import (
 	"os"
 
+	bldrgfx "gpdf/doc/builder/graphics"
+	bldrimg "gpdf/doc/builder/imgdraw"
+	bldrtext "gpdf/doc/builder/text"
 	"gpdf/reader"
 	"gpdf/reader/file"
 )
@@ -13,7 +16,6 @@ func Open(path string) (Document, error) {
 }
 
 // OpenWithPassword opens an existing PDF from path and decrypts it with the user password if encrypted.
-// Use empty password for unencrypted PDFs or to open without decryption.
 func OpenWithPassword(path string, userPassword string) (Document, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -40,6 +42,11 @@ func OpenWithPassword(path string, userPassword string) (Document, error) {
 }
 
 // New returns a new DocumentBuilder for constructing a PDF from scratch.
+// Sub-builders are initialized for text, graphics, and image drawing.
 func New() *DocumentBuilder {
-	return &DocumentBuilder{}
+	b := &DocumentBuilder{}
+	b.textDrawer = bldrtext.NewDrawer(b)
+	b.graphicsDrawer = bldrgfx.NewDrawer()
+	b.imageDrawer = bldrimg.NewDrawer()
+	return b
 }

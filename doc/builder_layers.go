@@ -21,16 +21,16 @@ func (b *DocumentBuilder) DrawInLayer(lh *layer.Handle, pageIndex int, draw func
 	if lh == nil || draw == nil {
 		return b
 	}
-	if pageIndex < 0 || pageIndex >= len(b.pages) {
+	if !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
-	ps := &b.pages[pageIndex]
+	ps := &b.pc.pages[pageIndex]
 
-	mcid := ps.nextMCID
-	ps.nextMCID++
+	mcid := ps.NextMCID
+	ps.NextMCID++
 
-	ps.graphicRuns = append(ps.graphicRuns, graphicRun{
-		ops: []content.Op{
+	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{
+		Ops: []content.Op{
 			{
 				Name: "BDC",
 				Args: []model.Object{
@@ -46,8 +46,8 @@ func (b *DocumentBuilder) DrawInLayer(lh *layer.Handle, pageIndex int, draw func
 
 	draw(b)
 
-	ps.graphicRuns = append(ps.graphicRuns, graphicRun{
-		ops: []content.Op{
+	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{
+		Ops: []content.Op{
 			{Name: "EMC"},
 		},
 	})

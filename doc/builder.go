@@ -1,6 +1,9 @@
 package doc
 
 import (
+	bldrgfx "gpdf/doc/builder/graphics"
+	bldrimg "gpdf/doc/builder/imgdraw"
+	bldrtext "gpdf/doc/builder/text"
 	"gpdf/doc/form"
 	"gpdf/doc/layer"
 	"gpdf/doc/metadata"
@@ -11,36 +14,35 @@ import (
 )
 
 // DocumentBuilder builds a new PDF via a fluent API. Call Build() to produce a Document.
+// It is a thin facade that delegates drawing operations to sub-builders.
 type DocumentBuilder struct {
 	metadata metadata.Support
 	outlines outline.Support
+	pc       pageConfig
+	fc       fontConfig
 
-	pageSize [2]float64
-	pages    []pageSpec
+	useTagged bool
+	tagging   taggedpkg.Support
+	layers    layer.Support
+	forms     form.Support
 
-	useTagged bool // if true, create Catalog /MarkInfo and /StructTreeRoot (tagged PDF)
-
-	// tagging owns tagged-structure-related state (tables, blocks, lists, figures, sections).
-	tagging taggedpkg.Support
-
-	// layers owns optional content groups (OCGs) used for simple on/off layers.
-	layers layer.Support
-
-	// forms owns AcroForm-related state and field definitions.
-	forms form.Support
-
-	// compressContent controls FlateDecode compression of page content streams.
-	// Default (false value) enables compression; set to true to disable.
 	noCompressContent bool
+	iccProfile        *ICCProfile
 
-	// fonts maps PostScript name to Font for accurate text measurement.
-	fonts map[string]font.Font
+	err error
 
-	// embeddedFonts tracks rune usage for registered EmbeddableFont instances.
-	embeddedFonts map[string]*embeddedFontUsage
+	textDrawer     bldrtext.Drawer
+	graphicsDrawer bldrgfx.Drawer
+	imageDrawer    bldrimg.Drawer
+}
 
-	// iccProfile is an optional ICC color profile for the document's default output intent.
-	iccProfile *ICCProfile
+// Err returns the first error recorded during building. Check after Build() or before further fluent calls.
+func (b *DocumentBuilder) Err() error { return b.err }
+
+func (b *DocumentBuilder) setErr(err error) {
+	if b.err == nil {
+		b.err = err
+	}
 }
 
 // Title sets the document title (Info /Title).
@@ -92,36 +94,21 @@ func (b *DocumentBuilder) SetLanguage(lang string) *DocumentBuilder {
 }
 
 // NoCompressContent disables FlateDecode compression of page content streams.
-// Useful for debugging or when raw content must be inspectable.
 func (b *DocumentBuilder) NoCompressContent() *DocumentBuilder {
 	b.noCompressContent = true
 	return b
 }
 
 // RegisterFont registers a parsed font for accurate text measurement and optional embedding.
-// The font is keyed by its PostScript name (e.g. "Helvetica-Bold", "ArialMT").
-// If the font implements font.EmbeddableFont, it will be embedded in the PDF with
-// proper CID encoding, subsetting, and ToUnicode CMap for full Unicode support.
 func (b *DocumentBuilder) RegisterFont(f font.Font) *DocumentBuilder {
 	if f == nil {
 		return b
 	}
-	if b.fonts == nil {
-		b.fonts = make(map[string]font.Font)
-	}
-	b.fonts[f.PostScriptName()] = f
-	if ef, ok := f.(font.EmbeddableFont); ok {
-		if b.embeddedFonts == nil {
-			b.embeddedFonts = make(map[string]*embeddedFontUsage)
-		}
-		b.embeddedFonts[ef.PostScriptName()] = newEmbeddedFontUsage(ef)
-	}
+	b.fc.registerFont(f)
 	return b
 }
 
 // SetDefaultICCProfile sets an ICC color profile for the document.
-// The profile is embedded as an ICCBased color space and referenced via an output intent
-// in the catalog, which is required for PDF/A conformance.
 func (b *DocumentBuilder) SetDefaultICCProfile(profile ICCProfile) *DocumentBuilder {
 	b.iccProfile = &profile
 	return b
@@ -129,45 +116,26 @@ func (b *DocumentBuilder) SetDefaultICCProfile(profile ICCProfile) *DocumentBuil
 
 // PageSize sets the default page size in points (width, height). Default is 595 x 842 (A4).
 func (b *DocumentBuilder) PageSize(width, height float64) *DocumentBuilder {
-	b.pageSize = [2]float64{width, height}
+	b.pc.pageSize = [2]float64{width, height}
 	return b
 }
 
 // AddPage adds a blank page with the current default page size.
 func (b *DocumentBuilder) AddPage() *DocumentBuilder {
-	w, h := b.pageSize[0], b.pageSize[1]
+	w, h := b.pc.pageSize[0], b.pc.pageSize[1]
 	if w == 0 {
 		w, h = 595, 842
 	}
-	dict := model.Dict{
-		model.Name("Type"):     model.Name("Page"),
-		model.Name("MediaBox"): model.Array{model.Integer(0), model.Integer(0), model.Real(w), model.Real(h)},
-	}
-	b.pages = append(b.pages, pageSpec{dict: dict})
+	b.pc.addPage(w, h)
 	return b
 }
 
 // pageHeight returns the page height in points for the given index.
 func (b *DocumentBuilder) pageHeight(pageIndex int) float64 {
-	if pageIndex < 0 || pageIndex >= len(b.pages) {
-		return 0
-	}
-	spec := b.pages[pageIndex]
-	if mb, ok := spec.dict[model.Name("MediaBox")].(model.Array); ok && len(mb) == 4 {
-		if h, ok := mb[3].(model.Real); ok {
-			return float64(h)
-		}
-		if h, ok := mb[3].(model.Integer); ok {
-			return float64(h)
-		}
-	}
-	if b.pageSize[1] > 0 {
-		return b.pageSize[1]
-	}
-	return 842
+	return b.pc.height(pageIndex)
 }
 
-// AddOutline adds a document outline (bookmark) with the given title linking to the page at 0-based pageIndex.
+// AddOutline adds a document outline (bookmark) linking to the given page.
 func (b *DocumentBuilder) AddOutline(title string, pageIndex int) *DocumentBuilder {
 	if title == "" || pageIndex < 0 {
 		return b
@@ -176,7 +144,7 @@ func (b *DocumentBuilder) AddOutline(title string, pageIndex int) *DocumentBuild
 	return b
 }
 
-// AddOutlineURL adds an outline entry that opens the given URL when clicked (URI action).
+// AddOutlineURL adds an outline entry that opens the given URL.
 func (b *DocumentBuilder) AddOutlineURL(title string, url string) *DocumentBuilder {
 	if title == "" || url == "" {
 		return b
@@ -185,7 +153,7 @@ func (b *DocumentBuilder) AddOutlineURL(title string, url string) *DocumentBuild
 	return b
 }
 
-// AddOutlineToDest adds an outline entry that goes to the named destination when clicked (GoTo action).
+// AddOutlineToDest adds an outline entry that goes to the named destination.
 func (b *DocumentBuilder) AddOutlineToDest(title string, destName string) *DocumentBuilder {
 	if title == "" || destName == "" {
 		return b
@@ -194,7 +162,7 @@ func (b *DocumentBuilder) AddOutlineToDest(title string, destName string) *Docum
 	return b
 }
 
-// AddLinkToPage adds a link annotation on the page at pageIndex (0-based) with the given rectangle, linking to destPageIndex.
+// AddLinkToPage adds a link annotation on a page linking to another page.
 func (b *DocumentBuilder) AddLinkToPage(pageIndex int, llx, lly, urx, ury float64, destPageIndex int) *DocumentBuilder {
 	if pageIndex < 0 || destPageIndex < 0 {
 		return b
@@ -205,7 +173,7 @@ func (b *DocumentBuilder) AddLinkToPage(pageIndex int, llx, lly, urx, ury float6
 	return b
 }
 
-// AddLinkToDest adds a link annotation on the page at pageIndex with the given rect, linking to the named destination.
+// AddLinkToDest adds a link annotation on a page linking to a named destination.
 func (b *DocumentBuilder) AddLinkToDest(pageIndex int, llx, lly, urx, ury float64, destName string) *DocumentBuilder {
 	if pageIndex < 0 || destName == "" {
 		return b
@@ -216,7 +184,7 @@ func (b *DocumentBuilder) AddLinkToDest(pageIndex int, llx, lly, urx, ury float6
 	return b
 }
 
-// AddLinkToURL adds a link annotation on the page at pageIndex with the given rect, opening the URL when clicked.
+// AddLinkToURL adds a link annotation on a page opening a URL.
 func (b *DocumentBuilder) AddLinkToURL(pageIndex int, llx, lly, urx, ury float64, url string) *DocumentBuilder {
 	if pageIndex < 0 || url == "" {
 		return b
@@ -240,7 +208,6 @@ func (b *DocumentBuilder) SetAcroForm() *DocumentBuilder {
 }
 
 // SetAcroFormSigFlags sets /SigFlags on the AcroForm dictionary.
-// Implies SetAcroForm(). Call before Build().
 func (b *DocumentBuilder) SetAcroFormSigFlags(flags int) *DocumentBuilder {
 	b.forms.UseAcroForm = true
 	b.forms.SigFlags = flags
@@ -259,8 +226,7 @@ func (b *DocumentBuilder) AddNamedDest(name string, pageIndex int) *DocumentBuil
 	return b
 }
 
-// BeginSection starts a logical section; all following tagged content
-// until EndSection is called will be grouped under one Sect structure element.
+// BeginSection starts a logical section for tagged content.
 func (b *DocumentBuilder) BeginSection() *DocumentBuilder {
 	b.useTagged = true
 	b.tagging.Sections = append(b.tagging.Sections, taggedpkg.Section{})

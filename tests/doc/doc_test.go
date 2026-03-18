@@ -1,4 +1,4 @@
-package doc
+package doc_test
 
 import (
 	"bytes"
@@ -7,17 +7,21 @@ import (
 	"sort"
 	"testing"
 
+	"gpdf/doc"
 	"gpdf/model"
 	"gpdf/writer"
 )
 
 func TestNewAndSave(t *testing.T) {
 	buf := new(bytes.Buffer)
-	doc, err := New().Title("Test").Author("gPDF").PageSize(595, 842).AddPage().AddPage().Build()
+	b := doc.New().Title("Test").Author("gPDF").PageSize(595, 842)
+	b.AddPage()
+	b.AddPage()
+	d, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Save(buf); err != nil {
+	if err := d.Save(buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
@@ -26,21 +30,24 @@ func TestNewAndSave(t *testing.T) {
 	if !bytes.HasPrefix(buf.Bytes(), []byte("%PDF-2.0")) {
 		t.Error("expected PDF 2.0 header")
 	}
-	_ = doc.Close()
+	_ = d.Close()
 }
 
 func TestSaveLinearized(t *testing.T) {
-	doc, err := New().Title("Linear").Author("gPDF").PageSize(595, 842).AddPage().AddPage().Build()
+	b := doc.New().Title("Linear").Author("gPDF").PageSize(595, 842)
+	b.AddPage()
+	b.AddPage()
+	d, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer doc.Close()
+	defer d.Close()
 	path := filepath.Join(t.TempDir(), "linear.pdf")
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.SaveLinearized(f); err != nil {
+	if err := d.SaveLinearized(f); err != nil {
 		f.Close()
 		t.Fatal(err)
 	}
@@ -48,21 +55,21 @@ func TestSaveLinearized(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Linearized PDF uses 1.4 and has /Linearized in first 1K
-	b, err := os.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.HasPrefix(b, []byte("%PDF-1.4")) {
-		t.Errorf("linearized PDF should start with %%PDF-1.4, got %s", b[:min(20, len(b))])
+	if !bytes.HasPrefix(data, []byte("%PDF-1.4")) {
+		t.Errorf("linearized PDF should start with %%PDF-1.4, got %s", data[:min(20, len(data))])
 	}
-	if len(b) > 1024 {
-		b = b[:1024]
+	if len(data) > 1024 {
+		data = data[:1024]
 	}
-	if !bytes.Contains(b, []byte("/Linearized")) {
+	if !bytes.Contains(data, []byte("/Linearized")) {
 		t.Error("linearized PDF should contain /Linearized in first 1K")
 	}
 	// Open and verify structure
-	opened, err := Open(path)
+	opened, err := doc.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +88,9 @@ func TestRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "out.pdf")
 
 	// Build and save (1 catalog, 2 pages, 3 page dicts, 4 info = objects 1..6)
-	built, err := New().Title("RoundTrip").Author("gPDF").PageSize(595, 842).AddPage().Build()
+	b := doc.New().Title("RoundTrip").Author("gPDF").PageSize(595, 842)
+	b.AddPage()
+	built, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +108,7 @@ func TestRoundTrip(t *testing.T) {
 	_ = built.Close()
 
 	// Open and read back
-	opened, err := Open(path)
+	opened, err := doc.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,13 +134,15 @@ func TestRoundTrip(t *testing.T) {
 func TestOpenWithPassword_Empty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.pdf")
-	built, _ := New().Title("T").AddPage().Build()
+	b := doc.New().Title("T")
+	b.AddPage()
+	built, _ := b.Build()
 	f, _ := os.Create(path)
 	_ = built.Save(f)
 	f.Close()
 	built.Close()
 	// OpenWithPassword with empty password should behave like Open
-	opened, err := OpenWithPassword(path, "")
+	opened, err := doc.OpenWithPassword(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,24 +155,25 @@ func TestOpenWithPassword_Empty(t *testing.T) {
 
 func TestDrawText(t *testing.T) {
 	buf := new(bytes.Buffer)
-	doc, err := New().
+	b := doc.New().
 		Title("DrawText").
 		Author("gPDF").
-		PageSize(595, 842).
-		AddPage().
+		PageSize(595, 842)
+	b.AddPage()
+	d, err := b.
 		DrawText("Hello, PDF!", 100, 700, "Helvetica", 12).
 		Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Save(buf); err != nil {
+	if err := d.Save(buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
 		t.Fatal("expected non-empty PDF output")
 	}
 	// Page should have Contents and Resources with Font
-	pages, _ := doc.Pages()
+	pages, _ := d.Pages()
 	if len(pages) != 1 {
 		t.Fatalf("expected 1 page, got %d", len(pages))
 	}
@@ -173,23 +185,23 @@ func TestDrawText(t *testing.T) {
 	if !ok || len(res) == 0 {
 		t.Error("page should have Resources with Font")
 	}
-	_ = doc.Close()
+	_ = d.Close()
 }
 
 func TestInfo(t *testing.T) {
-	doc, err := New().
+	b := doc.New().
 		Title("Info Test").
 		Author("Alice").
 		Subject("Testing").
 		Keywords("pdf,gpdf").
 		Creator("gPDF").
-		Producer("gPDF").
-		AddPage().
-		Build()
+		Producer("gPDF")
+	b.AddPage()
+	d, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := doc.Info()
+	info, err := d.Info()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,20 +226,21 @@ func TestInfo(t *testing.T) {
 	if s, ok := info[model.Name("Producer")].(model.String); !ok || s != "gPDF" {
 		t.Errorf("Producer: got %v", info[model.Name("Producer")])
 	}
-	_ = doc.Close()
+	_ = d.Close()
 }
 
 func TestMetadataStream(t *testing.T) {
 	xmp := []byte(`<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"/>`)
-	doc, err := New().
-		Title("XMP Test").
-		AddPage().
+	b := doc.New().
+		Title("XMP Test")
+	b.AddPage()
+	d, err := b.
 		Metadata(xmp).
 		Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := doc.MetadataStream()
+	got, err := d.MetadataStream()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,24 +250,26 @@ func TestMetadataStream(t *testing.T) {
 	if string(got) != string(xmp) {
 		t.Errorf("MetadataStream: got %q", got)
 	}
-	_ = doc.Close()
+	_ = d.Close()
 }
 
 func TestDrawImage(t *testing.T) {
 	// Minimal 2x2 DeviceGray 8bpc image (4 bytes)
 	raw := []byte{0x00, 0x40, 0x80, 0xff}
 	buf := new(bytes.Buffer)
-	doc, err := New().
+	b := doc.New().
 		Title("DrawImage").
 		Author("gPDF").
 		PageSize(595, 842).
-		AddPage().
+		NoCompressContent()
+	b.AddPage()
+	d, err := b.
 		DrawImage(100, 600, 72, 72, raw, 2, 2, 8, "DeviceGray").
 		Build()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Save(buf); err != nil {
+	if err := d.Save(buf); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {
@@ -267,7 +282,7 @@ func TestDrawImage(t *testing.T) {
 	if !bytes.Contains(pdf, []byte("Do")) {
 		t.Error("expected Do operator in content stream")
 	}
-	pages, _ := doc.Pages()
+	pages, _ := d.Pages()
 	if len(pages) != 1 {
 		t.Fatalf("expected 1 page, got %d", len(pages))
 	}
@@ -279,7 +294,7 @@ func TestDrawImage(t *testing.T) {
 	if xobj == nil || len(xobj) == 0 {
 		t.Error("page Resources should have XObject with Im1")
 	}
-	_ = doc.Close()
+	_ = d.Close()
 }
 
 // patchDoc implements writer.Document for incremental update tests.
@@ -310,7 +325,9 @@ func TestIncrementalSave(t *testing.T) {
 	path := filepath.Join(dir, "inc.pdf")
 
 	// 1. Create initial PDF and save
-	built, err := New().Title("Original").Author("Alice").PageSize(595, 842).AddPage().Build()
+	b := doc.New().Title("Original").Author("Alice").PageSize(595, 842)
+	b.AddPage()
+	built, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +345,7 @@ func TestIncrementalSave(t *testing.T) {
 	built.Close()
 
 	// 2. Open and get startXRef and root for patch
-	opened, err := Open(path)
+	opened, err := doc.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +395,7 @@ func TestIncrementalSave(t *testing.T) {
 	}
 
 	// 4. Re-open and verify updated Info (reader uses last xref)
-	opened2, err := Open(path)
+	opened2, err := doc.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

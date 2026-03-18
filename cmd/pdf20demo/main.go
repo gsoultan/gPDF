@@ -31,8 +31,8 @@ func main() {
 		PageSize(595, 842).
 		SetLanguage("en-US").
 		SetTagged().
-		SetAcroFormSigFlags(3). // mark document as append-only for future signatures
-		AddPage()
+		SetAcroFormSigFlags(3)
+	builder.AddPage()
 
 	// Section 1: tagged heading and paragraph.
 	builder = builder.BeginSection().

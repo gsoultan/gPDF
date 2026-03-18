@@ -7,75 +7,12 @@ import (
 	"gpdf/model"
 )
 
-// CellVerticalAlign controls vertical placement of content inside a table cell.
-type CellVerticalAlign string
-
-const (
-	CellVAlignTop    CellVerticalAlign = "top"
-	CellVAlignMiddle CellVerticalAlign = "middle"
-	CellVAlignBottom CellVerticalAlign = "bottom"
-)
-
-// CellStyle controls padding and vertical alignment for a table cell.
-// Zero value uses sensible defaults (padding 4pt on all sides, top alignment).
-type CellStyle struct {
-	PaddingTop    float64
-	PaddingRight  float64
-	PaddingBottom float64
-	PaddingLeft   float64
-
-	VAlign CellVerticalAlign
-
-	// TextColorRGB is optional RGB text color in [0,1]. When all components are zero,
-	// the document default color is used.
-	TextColorRGB [3]float64
-}
-
-func (s CellStyle) resolvedPadding() (top, right, bottom, left float64) {
-	const defaultPad = 4.0
-	if s.PaddingTop == 0 && s.PaddingRight == 0 && s.PaddingBottom == 0 && s.PaddingLeft == 0 {
-		return defaultPad, defaultPad, defaultPad, defaultPad
-	}
-	return s.PaddingTop, s.PaddingRight, s.PaddingBottom, s.PaddingLeft
-}
-
-// TableCellImageSpec describes an image to be placed inside a table cell.
-type TableCellImageSpec struct {
-	Raw               []byte
-	WidthPx, HeightPx int
-	BitsPerComponent  int
-	ColorSpace        string
-
-	WidthPt, HeightPt float64
-}
-
-// TableCellSpec describes a single cell in a tagged table.
-type TableCellSpec struct {
-	Text       string
-	Paragraphs []string
-
-	ListItems []string
-	ListKind  string // "ordered", "unordered", or empty
-
-	Image *TableCellImageSpec
-
-	Style CellStyle
-
-	ColSpan  int
-	RowSpan  int
-	IsHeader bool
-
-	Scope string
-	Alt   string
-	Lang  string
-}
-
 // measureTableCellHeight returns an approximate height for the given cell content.
 func measureTableCellHeight(cell TableCellSpec, cellWidth float64) float64 {
 	const fontSize = 10.0
 	const lineSpacing = 1.2
 
-	top, right, bottom, left := cell.Style.resolvedPadding()
+	top, right, bottom, left := cell.Style.ResolvedPadding()
 	height := top
 
 	if cell.Image != nil && len(cell.Image.Raw) > 0 && cell.Image.WidthPx > 0 && cell.Image.HeightPx > 0 {
@@ -139,11 +76,20 @@ type TableBuilder struct {
 	headerCells    [][]TableCellSpec
 	currentY       float64
 	inPageBreak    bool
+
+	// Styling options.
+	// HeaderFillColor is the background fill for header rows (applied when HasHeaderFillColor is true).
+	HeaderFillColor    Color
+	HasHeaderFillColor bool
+	// AlternateRowColor is applied to every odd-numbered data row (0-based) when HasAlternateRowColor is true.
+	AlternateRowColor    Color
+	HasAlternateRowColor bool
+	dataRowIndex         int // counts data (non-header) rows for alternation
 }
 
 // BeginTable starts a tagged table region on the given page at (x, y) with the given size and number of columns.
 func (b *DocumentBuilder) BeginTable(pageIndex int, x, y, width, height float64, cols int) *TableBuilder {
-	if pageIndex < 0 || pageIndex >= len(b.pages) || cols <= 0 {
+	if !b.pc.validPageIndex(pageIndex) || cols <= 0 {
 		return nil
 	}
 	b.useTagged = true
@@ -163,6 +109,26 @@ func (b *DocumentBuilder) BeginTable(pageIndex int, x, y, width, height float64,
 		tableIndex: tableIndex,
 		currentY:   y + height,
 	}
+}
+
+// WithHeaderFillColor sets a background fill color applied to all header rows.
+func (t *TableBuilder) WithHeaderFillColor(c Color) *TableBuilder {
+	if t == nil {
+		return t
+	}
+	t.HeaderFillColor = c
+	t.HasHeaderFillColor = true
+	return t
+}
+
+// WithAlternateRowColor sets a background fill color applied to every other data row.
+func (t *TableBuilder) WithAlternateRowColor(c Color) *TableBuilder {
+	if t == nil {
+		return t
+	}
+	t.AlternateRowColor = c
+	t.HasAlternateRowColor = true
+	return t
 }
 
 // AllowPageBreak enables automatic page breaks when rows exceed available space.
@@ -200,19 +166,26 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 	}
 	table := &t.builder.tagging.Tables[t.tableIndex]
 
-	cellWidth := t.width / float64(t.cols)
+	baseColWidth := t.width / float64(t.cols)
 
 	rowHeight := 0.0
 	cellHeights := make([]float64, len(cells))
-	for col, cell := range cells {
-		if col >= t.cols {
+	logicalCol := 0
+	for idx, cell := range cells {
+		if logicalCol >= t.cols {
 			break
 		}
+		span := cell.ColSpan
+		if span <= 0 {
+			span = 1
+		}
+		cellWidth := baseColWidth * float64(span)
 		h := measureTableCellHeight(cell, cellWidth)
-		cellHeights[col] = h
+		cellHeights[idx] = h
 		if h > rowHeight {
 			rowHeight = h
 		}
+		logicalCol += span
 	}
 	if rowHeight <= 0 {
 		rowHeight = t.height / float64(t.cols)
@@ -240,14 +213,30 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 
 	rowBottom := t.currentY - rowHeight
 
-	ps := &t.builder.pages[t.pageIndex]
-	for col, cell := range cells {
-		if col >= t.cols {
+	ps := &t.builder.pc.pages[t.pageIndex]
+
+	// Determine the effective row fill color.
+	var rowFillColor Color
+	hasRowFill := false
+	if isHeader && t.HasHeaderFillColor {
+		rowFillColor = t.HeaderFillColor
+		hasRowFill = true
+	} else if !isHeader && t.HasAlternateRowColor && t.dataRowIndex%2 == 1 {
+		rowFillColor = t.AlternateRowColor
+		hasRowFill = true
+	}
+
+	logicalCol2 := 0
+	for cellIdx, cell := range cells {
+		if logicalCol2 >= t.cols {
 			break
 		}
-		if cell.ColSpan <= 0 {
-			cell.ColSpan = 1
+		span := cell.ColSpan
+		if span <= 0 {
+			span = 1
 		}
+		cellColWidth := baseColWidth * float64(span)
+
 		role := model.Name("TD")
 		if isHeader || cell.IsHeader {
 			role = model.Name("TH")
@@ -257,8 +246,21 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 			scope = "Column"
 		}
 
-		left := t.x + float64(col)*cellWidth
+		left := t.x + float64(logicalCol2)*baseColWidth
+		cellWidth := cellColWidth
+		_ = cellHeights[cellIdx] // already computed above
 		bottom := rowBottom
+
+		// Draw cell background fill.
+		effFill := rowFillColor
+		effHasFill := hasRowFill
+		if cell.Style.HasFillColor {
+			effFill = cell.Style.FillColor
+			effHasFill = true
+		}
+		if effHasFill {
+			t.builder.FillRect(t.pageIndex, left, bottom, cellWidth, rowHeight, effFill)
+		}
 
 		sc := tagged.StructCell{
 			PageIndex: t.pageIndex,
@@ -272,9 +274,9 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 		const fontSize = 10.0
 		const lineSpacing = 1.2
 
-		topPad, rightPad, bottomPad, leftPad := cell.Style.resolvedPadding()
+		topPad, rightPad, bottomPad, leftPad := cell.Style.ResolvedPadding()
 
-		contentHeight := cellHeights[col] - (topPad + bottomPad)
+		contentHeight := cellHeights[cellIdx] - (topPad + bottomPad)
 		if contentHeight < 0 {
 			contentHeight = 0
 		}
@@ -296,26 +298,12 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 		currentY := bottom + rowHeight - topPad - offset
 
 		if cell.Image != nil && len(cell.Image.Raw) > 0 && cell.Image.WidthPx > 0 && cell.Image.HeightPx > 0 {
-			w := cell.Image.WidthPt
-			h := cell.Image.HeightPt
-			if w <= 0 || h <= 0 {
-				maxWidth := cellWidth - leftPad - rightPad
-				if maxWidth <= 0 {
-					maxWidth = cellWidth
-				}
-				scale := maxWidth / float64(cell.Image.WidthPx)
-				w = float64(cell.Image.WidthPx) * scale
-				h = float64(cell.Image.HeightPx) * scale
-				maxHeight := rowHeight - topPad - bottomPad
-				if h > maxHeight {
-					h = maxHeight
-				}
-			}
+			w, h := computeImageDimensions(cell.Image, cellWidth, rowHeight, leftPad, rightPad, topPad, bottomPad)
 			imgY := currentY - h
-			mcid := ps.nextMCID
-			ps.nextMCID++
+			mcid := ps.NextMCID
+			ps.NextMCID++
 			sc.MCIDs = append(sc.MCIDs, mcid)
-			ps.imageRuns = append(ps.imageRuns, imageRun{
+			ps.ImageRuns = append(ps.ImageRuns, imageRun{
 				X:                left + leftPad,
 				Y:                imgY,
 				WidthPt:          w,
@@ -331,33 +319,15 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 			currentY = imgY - topPad
 		}
 
-		var lines []string
-		if cell.Text != "" {
-			lines = append(lines, cell.Text)
-		}
-		if len(cell.Paragraphs) > 0 {
-			lines = append(lines, cell.Paragraphs...)
-		}
-		if len(cell.ListItems) > 0 {
-			for i, item := range cell.ListItems {
-				prefix := ""
-				switch cell.ListKind {
-				case "ordered":
-					prefix = fmt.Sprintf("%d. ", i+1)
-				case "unordered":
-					prefix = "• "
-				}
-				lines = append(lines, prefix+item)
-			}
-		}
+		lines := collectCellLines(cell)
 
 		lineHeight := fontSize * lineSpacing
 		for _, text := range lines {
 			if text == "" {
 				continue
 			}
-			mcid := ps.nextMCID
-			ps.nextMCID++
+			mcid := ps.NextMCID
+			ps.NextMCID++
 			sc.MCIDs = append(sc.MCIDs, mcid)
 			x := left + leftPad
 			y := currentY
@@ -377,13 +347,17 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 				tr.TextColorRGB = cell.Style.TextColorRGB
 				tr.UseDefaultColor = false
 			}
-			ps.textRuns = append(ps.textRuns, tr)
+			ps.TextRuns = append(ps.TextRuns, tr)
 			if currentY < bottom+bottomPad {
 				break
 			}
 		}
 
 		row.Cells = append(row.Cells, sc)
+		logicalCol2 += span
+	}
+	if !isHeader {
+		t.dataRowIndex++
 	}
 	t.currentY = rowBottom
 	t.currentRow++
@@ -398,7 +372,7 @@ func (t *TableBuilder) tableBottomMargin() float64 {
 // doPageBreak moves the table to the next page and re-renders header rows.
 func (t *TableBuilder) doPageBreak() {
 	t.pageIndex++
-	if t.pageIndex >= len(t.builder.pages) {
+	if t.pageIndex >= len(t.builder.pc.pages) {
 		t.builder.AddPage()
 	}
 	pageHeight := t.builder.pageHeight(t.pageIndex)
@@ -433,7 +407,7 @@ func (t *TableBuilder) renderVisualRow(isHeader bool, cells []TableCellSpec) {
 	}
 
 	rowBottom := t.currentY - rowHeight
-	ps := &t.builder.pages[t.pageIndex]
+	ps := &t.builder.pc.pages[t.pageIndex]
 
 	const fontName = "Helvetica"
 	const fontSize = 10.0
@@ -445,31 +419,16 @@ func (t *TableBuilder) renderVisualRow(isHeader bool, cells []TableCellSpec) {
 		}
 
 		left := t.x + float64(col)*cellWidth
-		topPad, _, bottomPad, leftPad := cell.Style.resolvedPadding()
+		topPad, _, bottomPad, leftPad := cell.Style.ResolvedPadding()
 		currentY := rowBottom + rowHeight - topPad
 
-		var lines []string
-		if cell.Text != "" {
-			lines = append(lines, cell.Text)
-		}
-		lines = append(lines, cell.Paragraphs...)
-		for i, item := range cell.ListItems {
-			prefix := ""
-			switch cell.ListKind {
-			case "ordered":
-				prefix = fmt.Sprintf("%d. ", i+1)
-			case "unordered":
-				prefix = "• "
-			}
-			lines = append(lines, prefix+item)
-		}
-
+		lines := collectCellLines(cell)
 		lineHeight := fontSize * lineSpacing
 		for _, text := range lines {
 			if text == "" {
 				continue
 			}
-			ps.textRuns = append(ps.textRuns, textRun{
+			ps.TextRuns = append(ps.TextRuns, textRun{
 				Text:            text,
 				X:               left + leftPad,
 				Y:               currentY,
@@ -492,4 +451,45 @@ func (t *TableBuilder) EndTable() *DocumentBuilder {
 		return nil
 	}
 	return t.builder
+}
+
+// computeImageDimensions calculates the display size of a cell image,
+// scaling to fit within the available cell area.
+func computeImageDimensions(img *TableCellImageSpec, cellWidth, rowHeight, leftPad, rightPad, topPad, bottomPad float64) (w, h float64) {
+	w, h = img.WidthPt, img.HeightPt
+	if w > 0 && h > 0 {
+		return w, h
+	}
+	maxWidth := cellWidth - leftPad - rightPad
+	if maxWidth <= 0 {
+		maxWidth = cellWidth
+	}
+	scale := maxWidth / float64(img.WidthPx)
+	w = float64(img.WidthPx) * scale
+	h = float64(img.HeightPx) * scale
+	maxHeight := rowHeight - topPad - bottomPad
+	if h > maxHeight {
+		h = maxHeight
+	}
+	return w, h
+}
+
+// collectCellLines gathers all text lines from a cell (plain text, paragraphs, list items).
+func collectCellLines(cell TableCellSpec) []string {
+	var lines []string
+	if cell.Text != "" {
+		lines = append(lines, cell.Text)
+	}
+	lines = append(lines, cell.Paragraphs...)
+	for i, item := range cell.ListItems {
+		prefix := ""
+		switch cell.ListKind {
+		case "ordered":
+			prefix = fmt.Sprintf("%d. ", i+1)
+		case "unordered":
+			prefix = "• "
+		}
+		lines = append(lines, prefix+item)
+	}
+	return lines
 }

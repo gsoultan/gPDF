@@ -87,23 +87,44 @@ func (d *Document) ReadContent() (string, error) {
 	return d.doc.Content()
 }
 
+// ReadContentPerPage returns extracted text for each page in order.
+func (d *Document) ReadContentPerPage() ([]string, error) {
+	return d.doc.ContentPerPage()
+}
+
+// ReadImages returns metadata and raw bytes for all images across all pages.
+func (d *Document) ReadImages() ([]reader.ImageInfo, error) {
+	return d.doc.Images()
+}
+
+// ReadImagesPerPage returns image info grouped by page (one slice per page).
+func (d *Document) ReadImagesPerPage() ([][]reader.ImageInfo, error) {
+	return d.doc.ImagesPerPage()
+}
+
+// ReadLayout returns one PageLayout per page with positioned, styled TextBlocks.
+func (d *Document) ReadLayout() ([]reader.PageLayout, error) {
+	return d.doc.Layout()
+}
+
+// ReadTables detects table-like grids from the page layout and returns them grouped by page.
+func (d *Document) ReadTables() ([][]reader.Table, error) {
+	return d.doc.Tables()
+}
+
 // Search returns, for each keyword, the 0-based page indices where it was found.
 func (d *Document) Search(keywords ...string) ([]model.SearchResult, error) {
-	perPage, err := reader.ExtractTextPerPage(d.doc)
-	if err != nil {
-		return nil, err
-	}
-	return reader.SearchPages(perPage, keywords...), nil
+	return d.doc.Search(keywords...)
 }
 
 // Replace replaces all occurrences of old with new in content streams.
 func (d *Document) Replace(old, new string) error {
-	return reader.ReplaceContent(d.doc, old, new)
+	return d.doc.Replace(old, new)
 }
 
 // Replaces applies multiple replacements to content streams.
 func (d *Document) Replaces(replacements map[string]string) error {
-	return reader.ReplacesContent(d.doc, replacements)
+	return d.doc.Replaces(replacements)
 }
 
 // Resolve returns the indirect object at the given reference.

@@ -83,74 +83,21 @@ func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 
 // WriteWithPassword writes the document encrypted with Standard handler (R=2) using user and owner passwords.
 func (pw *PDFWriter) WriteWithPassword(w io.Writer, doc Document, userPassword, ownerPassword string) error {
-	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
-	objNums := doc.ObjectNumbers()
-	if len(objNums) == 0 {
-		return fmt.Errorf("document has no objects")
-	}
-	sort.Ints(objNums)
-	maxNum := objNums[len(objNums)-1]
-	encryptNum := maxNum + 1
-	id := make([]byte, 16)
-	if _, err := rand.Read(id); err != nil {
-		return err
-	}
-	encDict, enc, err := security.BuildEncryptDictForWrite(userPassword, ownerPassword, id, -4)
-	if err != nil {
-		return err
-	}
-	trailerDict := copyTrailerWithEncrypt(doc.Trailer().Dict, encryptNum, id)
-	offsets := make(map[int]int64)
-	var body bytes.Buffer
-	ref := model.Ref{ObjectNumber: 0, Generation: 0}
-	for _, num := range objNums {
-		ref.ObjectNumber = num
-		ref.Generation = 0
-		obj, err := doc.Resolve(ref)
-		if err != nil {
-			return err
-		}
-		pos := int64(len(header)) + int64(body.Len())
-		offsets[num] = pos
-		if err := pw.writeIndirectObjectEnc(&body, num, 0, obj, enc); err != nil {
-			return err
-		}
-	}
-	pos := int64(len(header)) + int64(body.Len())
-	offsets[encryptNum] = pos
-	if err := pw.writeIndirectObjectEnc(&body, encryptNum, 0, encDict, nil); err != nil {
-		return err
-	}
-	allNums := append([]int{}, objNums...)
-	allNums = append(allNums, encryptNum)
-	sort.Ints(allNums)
-	maxNum = allNums[len(allNums)-1]
-	if _, err := io.WriteString(w, header); err != nil {
-		return err
-	}
-	if _, err := w.Write(body.Bytes()); err != nil {
-		return err
-	}
-	xrefStart := int64(len(header)) + int64(body.Len())
-	if err := pw.writeXRefTable(w, doc, nil, offsets, maxNum); err != nil {
-		return err
-	}
-	if _, err := io.WriteString(w, "trailer\n"); err != nil {
-		return err
-	}
-	if err := pw.writeDict(w, trailerDict); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(w, "\nstartxref\n%d\n%%%%EOF\n", xrefStart); err != nil {
-		return err
-	}
-	return nil
+	return pw.writeEncrypted(w, doc, func(id []byte) (model.Dict, security.Encryptor, error) {
+		return security.BuildEncryptDictForWrite(userPassword, ownerPassword, id, -4)
+	})
 }
 
 // WriteWithAES256Password writes the document encrypted with AES-256 using a
 // simplified Standard handler (V=5, R=6). This is intended as a stronger
 // alternative to WriteWithPassword while keeping the API similar.
 func (pw *PDFWriter) WriteWithAES256Password(w io.Writer, doc Document, userPassword, ownerPassword string) error {
+	return pw.writeEncrypted(w, doc, func(id []byte) (model.Dict, security.Encryptor, error) {
+		return security.BuildAES256EncryptDictForWrite(userPassword, ownerPassword, id, -4)
+	})
+}
+
+func (pw *PDFWriter) writeEncrypted(w io.Writer, doc Document, buildEncrypt func(id []byte) (model.Dict, security.Encryptor, error)) error {
 	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
 	objNums := doc.ObjectNumbers()
 	if len(objNums) == 0 {
@@ -163,7 +110,7 @@ func (pw *PDFWriter) WriteWithAES256Password(w io.Writer, doc Document, userPass
 	if _, err := rand.Read(id); err != nil {
 		return err
 	}
-	encDict, enc, err := security.BuildAES256EncryptDictForWrite(userPassword, ownerPassword, id, -4)
+	encDict, enc, err := buildEncrypt(id)
 	if err != nil {
 		return err
 	}
@@ -241,65 +188,101 @@ func (pw *PDFWriter) writeIndirectObjectEnc(w io.Writer, num, gen int, obj model
 }
 
 func (pw *PDFWriter) writeObjectEnc(w io.Writer, obj model.Object, ref *model.Ref, enc security.Encryptor) error {
-	if enc != nil && ref != nil {
-		switch v := obj.(type) {
-		case model.String:
-			cipher, err := enc.EncryptString(*ref, []byte(v))
-			if err != nil {
-				return err
-			}
-			pw.writeHexString(w, cipher)
-			return nil
-		case *model.Stream:
-			content := v.Content
-			if pw.filters != nil {
-				if filterObj := v.Dict[model.Name("Filter")]; filterObj != nil {
-					if name, ok := filterObj.(model.Name); ok {
-						if f := pw.filters.Get(string(name)); f != nil {
-							var buf bytes.Buffer
-							if err := f.Encode(&buf, bytes.NewReader(v.Content), string(name)); err == nil {
-								content = buf.Bytes()
-							}
-						}
-					}
-				}
-			}
-			streamDict := make(model.Dict, len(v.Dict))
-			for k, val := range v.Dict {
-				streamDict[k] = val
-			}
-			streamDict[model.Name("Length")] = model.Integer(int64(len(content)))
-			if err := pw.writeDictEnc(w, streamDict, ref, enc); err != nil {
-				return err
-			}
-			encrypted, err := enc.EncryptStream(*ref, content)
-			if err != nil {
-				return err
-			}
-			io.WriteString(w, "\nstream\n")
-			w.Write(encrypted)
-			if len(encrypted) > 0 && encrypted[len(encrypted)-1] != '\n' {
-				io.WriteString(w, "\n")
-			}
-			io.WriteString(w, "endstream")
-			return nil
-		case model.Dict:
-			return pw.writeDictEnc(w, v, ref, enc)
-		case model.Array:
-			io.WriteString(w, "[")
-			for i, e := range v {
-				if i > 0 {
-					io.WriteString(w, " ")
-				}
-				if err := pw.writeObjectEnc(w, e, ref, enc); err != nil {
-					return err
-				}
-			}
-			io.WriteString(w, "]")
-			return nil
+	if enc == nil || ref == nil {
+		return pw.writeObject(w, obj)
+	}
+	switch v := obj.(type) {
+	case model.String:
+		return pw.writeEncryptedString(w, v, *ref, enc)
+	case *model.Stream:
+		return pw.writeEncryptedStream(w, v, ref, enc)
+	case model.Dict:
+		return pw.writeDictEnc(w, v, ref, enc)
+	case model.Array:
+		return pw.writeEncryptedArray(w, v, ref, enc)
+	default:
+		return pw.writeObject(w, obj)
+	}
+}
+
+func (pw *PDFWriter) writeEncryptedString(w io.Writer, s model.String, ref model.Ref, enc security.Encryptor) error {
+	cipher, err := enc.EncryptString(ref, []byte(s))
+	if err != nil {
+		return err
+	}
+	pw.writeHexString(w, cipher)
+	return nil
+}
+
+func (pw *PDFWriter) writeEncryptedStream(w io.Writer, v *model.Stream, ref *model.Ref, enc security.Encryptor) error {
+	content := pw.encodeStreamContent(v)
+	streamDict := make(model.Dict, len(v.Dict))
+	for k, val := range v.Dict {
+		streamDict[k] = val
+	}
+	streamDict[model.Name("Length")] = model.Integer(int64(len(content)))
+	if err := pw.writeDictEnc(w, streamDict, ref, enc); err != nil {
+		return err
+	}
+	encrypted, err := enc.EncryptStream(*ref, content)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "\nstream\n"); err != nil {
+		return err
+	}
+	if _, err := w.Write(encrypted); err != nil {
+		return err
+	}
+	if len(encrypted) > 0 && encrypted[len(encrypted)-1] != '\n' {
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
 		}
 	}
-	return pw.writeObject(w, obj)
+	_, err = io.WriteString(w, "endstream")
+	return err
+}
+
+func (pw *PDFWriter) writeEncryptedArray(w io.Writer, arr model.Array, ref *model.Ref, enc security.Encryptor) error {
+	if _, err := io.WriteString(w, "["); err != nil {
+		return err
+	}
+	for i, e := range arr {
+		if i > 0 {
+			if _, err := io.WriteString(w, " "); err != nil {
+				return err
+			}
+		}
+		if err := pw.writeObjectEnc(w, e, ref, enc); err != nil {
+			return err
+		}
+	}
+	_, err := io.WriteString(w, "]")
+	return err
+}
+
+// encodeStreamContent applies stream filters to produce encoded content.
+func (pw *PDFWriter) encodeStreamContent(v *model.Stream) []byte {
+	if pw.filters == nil {
+		return v.Content
+	}
+	filterObj := v.Dict[model.Name("Filter")]
+	if filterObj == nil {
+		return v.Content
+	}
+	name, ok := filterObj.(model.Name)
+	if !ok {
+		return v.Content
+	}
+	f := pw.filters.Get(string(name))
+	if f == nil {
+		return v.Content
+	}
+	var buf bytes.Buffer
+	if err := f.Encode(&buf, bytes.NewReader(v.Content), string(name)); err != nil {
+		return v.Content
+	}
+	return buf.Bytes()
 }
 
 func (pw *PDFWriter) writeDictEnc(w io.Writer, d model.Dict, ref *model.Ref, enc security.Encryptor) error {
@@ -471,19 +454,7 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 	case model.Dict:
 		return pw.writeDict(w, v)
 	case *model.Stream:
-		content := v.Content
-		if pw.filters != nil {
-			if filterObj := v.Dict[model.Name("Filter")]; filterObj != nil {
-				if name, ok := filterObj.(model.Name); ok {
-					if f := pw.filters.Get(string(name)); f != nil {
-						var enc bytes.Buffer
-						if err := f.Encode(&enc, bytes.NewReader(v.Content), string(name)); err == nil {
-							content = enc.Bytes()
-						}
-					}
-				}
-			}
-		}
+		content := pw.encodeStreamContent(v)
 		streamDict := make(model.Dict, len(v.Dict))
 		for k, val := range v.Dict {
 			streamDict[k] = val
@@ -492,12 +463,20 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 		if err := pw.writeDict(w, streamDict); err != nil {
 			return err
 		}
-		io.WriteString(w, "\nstream\n")
-		w.Write(content)
-		if len(content) > 0 && content[len(content)-1] != '\n' {
-			io.WriteString(w, "\n")
+		if _, err := io.WriteString(w, "\nstream\n"); err != nil {
+			return err
 		}
-		io.WriteString(w, "endstream")
+		if _, err := w.Write(content); err != nil {
+			return err
+		}
+		if len(content) > 0 && content[len(content)-1] != '\n' {
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(w, "endstream"); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown object type %T", obj)
 	}

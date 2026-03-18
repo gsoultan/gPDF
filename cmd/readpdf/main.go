@@ -3,14 +3,16 @@
 //   - Open a PDF file and parse its structure
 //   - Read document info (Title, Author, Subject, etc.)
 //   - List pages with their MediaBox dimensions
-//   - Resolve indirect objects and inspect dictionaries
-//   - Parse content stream operators (text extraction)
+//   - Extract text per page (using ToUnicode CMap decoding)
+//   - Search for keywords across pages
 //   - Read XMP metadata
 //
 // Usage:
 //
 //	go run ./cmd/readpdf <input.pdf>
 //	go run ./cmd/readpdf -password secret <encrypted.pdf>
+//	go run ./cmd/readpdf -text <input.pdf>
+//	go run ./cmd/readpdf -search hello -search world <input.pdf>
 package main
 
 import (
@@ -19,19 +21,27 @@ import (
 	"os"
 	"strings"
 
-	contentimpl "gpdf/content/impl"
 	"gpdf/model"
 	"gpdf/reader"
 )
 
+// multiFlag allows -search to be specified multiple times.
+type multiFlag []string
+
+func (m *multiFlag) String() string     { return strings.Join(*m, ", ") }
+func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
+
 func main() {
 	password := flag.String("password", "", "User password for encrypted PDFs (empty for unencrypted)")
-	verbose := flag.Bool("v", false, "Verbose: print content stream operators per page")
+	showText := flag.Bool("text", false, "Print extracted text for each page")
+	verbose := flag.Bool("v", false, "Alias for -text (backwards compatible)")
+	var searchTerms multiFlag
+	flag.Var(&searchTerms, "search", "Keyword to search for (may be repeated)")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		fmt.Println("Usage: go run ./cmd/readpdf [-password pw] [-v] <input.pdf>")
-		fmt.Println("  Reads a PDF and prints document info, page list, and optionally content operators.")
+		fmt.Println("Usage: go run ./cmd/readpdf [-password pw] [-text] [-search kw] <input.pdf>")
+		fmt.Println("  Reads a PDF and prints document info, page list, per-page text, and search results.")
 		os.Exit(1)
 	}
 	path := flag.Arg(0)
@@ -44,7 +54,16 @@ func main() {
 	defer cleanup()
 
 	printDocumentInfo(doc)
-	printPages(doc, *verbose)
+	printPages(doc)
+
+	if *showText || *verbose {
+		printTextPerPage(doc)
+	}
+
+	if len(searchTerms) > 0 {
+		printSearch(doc, searchTerms)
+	}
+
 	printMetadata(doc)
 }
 
@@ -85,11 +104,11 @@ func printDocumentInfo(doc reader.Document) {
 	}
 	if infoDict == nil {
 		fmt.Println("  (no Info dictionary)")
-		return
-	}
-	for _, key := range []string{"Title", "Author", "Subject", "Keywords", "Creator", "Producer"} {
-		if val, ok := infoDict[model.Name(key)]; ok {
-			fmt.Printf("  %-10s %v\n", key+":", val)
+	} else {
+		for _, key := range []string{"Title", "Author", "Subject", "Keywords", "Creator", "Producer"} {
+			if val, ok := infoDict[model.Name(key)]; ok {
+				fmt.Printf("  %-10s %v\n", key+":", val)
+			}
 		}
 	}
 
@@ -98,7 +117,7 @@ func printDocumentInfo(doc reader.Document) {
 	fmt.Println()
 }
 
-func printPages(doc reader.Document, verbose bool) {
+func printPages(doc reader.Document) {
 	fmt.Println("=== Pages ===")
 
 	pages, err := doc.Pages()
@@ -117,93 +136,49 @@ func printPages(doc reader.Document, verbose bool) {
 		} else {
 			fmt.Printf("  Page %d: (no MediaBox)\n", i+1)
 		}
+	}
+	fmt.Println()
+}
 
-		if verbose {
-			printPageContent(doc, page, i+1)
+func printTextPerPage(doc reader.Document) {
+	fmt.Println("=== Extracted Text (per page) ===")
+
+	perPage, err := doc.ContentPerPage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  (error extracting text: %v)\n", err)
+		return
+	}
+	for i, text := range perPage {
+		fmt.Printf("  -- Page %d --\n", i+1)
+		if text == "" {
+			fmt.Println("  (no text)")
+		} else {
+			fmt.Println(" ", text)
 		}
 	}
 	fmt.Println()
 }
 
-func printPageContent(doc reader.Document, page model.Page, pageNum int) {
-	contentsObj := page.Contents()
-	if contentsObj == nil {
-		return
-	}
+func printSearch(doc reader.Document, keywords []string) {
+	fmt.Println("=== Search Results ===")
 
-	var streamData []byte
-	switch v := contentsObj.(type) {
-	case model.Ref:
-		obj, err := doc.Resolve(v)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "    (error resolving contents: %v)\n", err)
-			return
-		}
-		s, ok := obj.(*model.Stream)
-		if !ok || s == nil {
-			return
-		}
-		streamData = s.Content
-	case model.Array:
-		for _, item := range v {
-			ref, ok := item.(model.Ref)
-			if !ok {
-				continue
-			}
-			obj, err := doc.Resolve(ref)
-			if err != nil {
-				continue
-			}
-			s, ok := obj.(*model.Stream)
-			if !ok || s == nil {
-				continue
-			}
-			streamData = append(streamData, s.Content...)
-			streamData = append(streamData, '\n')
-		}
-	}
-
-	if len(streamData) == 0 {
-		return
-	}
-
-	parser := contentimpl.NewStreamParser()
-	ops, err := parser.Parse(streamData)
+	results, err := doc.Search(keywords...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "    (error parsing content stream: %v)\n", err)
+		fmt.Fprintf(os.Stderr, "  (error searching: %v)\n", err)
 		return
 	}
-
-	var textParts []string
-	inText := false
-	for _, op := range ops {
-		switch op.Name {
-		case "BT":
-			inText = true
-		case "ET":
-			inText = false
-		case "Tj":
-			if inText && len(op.Args) > 0 {
-				if s, ok := op.Args[0].(model.String); ok {
-					textParts = append(textParts, string(s))
-				}
-			}
-		case "TJ":
-			if inText && len(op.Args) > 0 {
-				if arr, ok := op.Args[0].(model.Array); ok {
-					for _, elem := range arr {
-						if s, ok := elem.(model.String); ok {
-							textParts = append(textParts, string(s))
-						}
-					}
-				}
-			}
+	for _, r := range results {
+		if len(r.Pages) == 0 {
+			fmt.Printf("  %q: not found\n", r.Keyword)
+			continue
 		}
+		fmt.Printf("  %q: pages %v", r.Keyword, r.Pages)
+		if len(r.Indices) > 0 {
+			fmt.Printf(" indices %v", r.Indices)
+		}
+		fmt.Println()
 	}
-	if len(textParts) > 0 {
-		fmt.Printf("    Text: %s\n", strings.Join(textParts, ""))
-	}
-	fmt.Printf("    Operators: %d\n", len(ops))
+	fmt.Println()
 }
 
 func printMetadata(doc reader.Document) {

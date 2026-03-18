@@ -1,33 +1,35 @@
 package doc
 
 import (
-	"bytes"
-	"compress/zlib"
 	"fmt"
+	"math"
 
 	"gpdf/content"
 	"gpdf/model"
 )
 
-// buildPageContent returns content stream bytes and /Resources for graphics, text, and image runs.
-// Draw order: graphics first (backgrounds/borders), then text, then images.
-// When compression is enabled and effective, returns errFlateCompressed as the error.
-func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []textRun, imageRuns []imageRun, imageStreamNums []int) ([]byte, model.Dict, error) {
-	if len(graphicRuns) == 0 && len(textRuns) == 0 && len(imageRuns) == 0 {
-		return nil, nil, fmt.Errorf("no content")
-	}
+// buildGraphicsOps returns content stream ops from graphic runs (backgrounds, lines, shapes).
+func (b *DocumentBuilder) buildGraphicsOps(page *pageSpec, pageHeight float64) []content.Op {
 	var ops []content.Op
-
-	// 1. Graphics runs (backgrounds, lines, shapes).
-	for _, gr := range graphicRuns {
-		ops = append(ops, gr.ops...)
+	for _, gr := range page.GraphicRuns {
+		ops = append(ops, gr.Ops...)
 	}
+	return ops
+}
 
-	// 2. Text runs.
+// buildTextOps returns content stream ops from text runs and a font resource map (baseName -> resName).
+// If embeddedFonts is nil, uses b.fc.embeddedFonts.
+func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embeddedFonts map[string]*embeddedFontUsage) ([]content.Op, map[string]model.Name) {
 	fontRes := make(map[string]model.Name)
+	var ops []content.Op
 	currentColorSet := false
 	var currentColor [3]float64
-	for _, r := range textRuns {
+
+	ef := b.fc.embeddedFonts
+	if embeddedFonts != nil {
+		ef = embeddedFonts
+	}
+	for _, r := range page.TextRuns {
 		baseName := r.FontName
 		if baseName == "" {
 			baseName = "Helvetica"
@@ -69,29 +71,86 @@ func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []
 			)
 		}
 
-		// Determine text operand: hex-encoded glyph IDs for embedded fonts, literal string otherwise.
 		var textArg model.Object
-		if eu, ok := b.embeddedFonts[baseName]; ok {
+		if eu, ok := ef[baseName]; ok {
 			eu.markText(r.Text)
 			textArg = model.HexString(eu.font.Encode(r.Text))
 		} else {
 			textArg = model.String(r.Text)
 		}
 
-		ops = append(ops,
-			content.Op{Name: "BT", Args: nil},
-			content.Op{Name: "Tf", Args: []model.Object{resName, model.Real(size)}},
+		btOps := []content.Op{
+			{Name: "BT", Args: nil},
+			{Name: "Tf", Args: []model.Object{resName, model.Real(size)}},
+		}
+		if r.LetterSpacing != 0 {
+			btOps = append(btOps, content.Op{
+				Name: "Tc",
+				Args: []model.Object{model.Real(r.LetterSpacing)},
+			})
+		}
+		if r.WordSpacing != 0 {
+			btOps = append(btOps, content.Op{
+				Name: "Tw",
+				Args: []model.Object{model.Real(r.WordSpacing)},
+			})
+		}
+		btOps = append(btOps,
 			content.Op{Name: "Td", Args: []model.Object{model.Real(r.X), model.Real(r.Y)}},
 			content.Op{Name: "Tj", Args: []model.Object{textArg}},
 			content.Op{Name: "ET", Args: nil},
 		)
+		ops = append(ops, btOps...)
+
+		if r.Underline {
+			tw := b.textWidth(r.Text, size, baseName)
+			uy := r.Y - size*0.1
+			thick := size * 0.07
+			ops = append(ops,
+				content.Op{Name: "q"},
+				content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
+				content.Op{Name: "RG", Args: []model.Object{
+					model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
+				}},
+				content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(uy)}},
+				content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(uy)}},
+				content.Op{Name: "S"},
+				content.Op{Name: "Q"},
+			)
+		}
+		if r.Strikethrough {
+			tw := b.textWidth(r.Text, size, baseName)
+			sy := r.Y + size*0.3
+			thick := size * 0.07
+			ops = append(ops,
+				content.Op{Name: "q"},
+				content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
+				content.Op{Name: "RG", Args: []model.Object{
+					model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
+				}},
+				content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(sy)}},
+				content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(sy)}},
+				content.Op{Name: "S"},
+				content.Op{Name: "Q"},
+			)
+		}
+
 		if r.HasMCID {
 			ops = append(ops, content.Op{Name: "EMC", Args: nil})
 		}
 	}
+	return ops, fontRes
+}
 
-	// 3. Image runs.
-	for i, im := range imageRuns {
+// buildImageOps returns content stream ops from image runs and XObject resources.
+// Also returns imageExtGStates (opacity ExtGState dicts) to merge into page resources.
+func (b *DocumentBuilder) buildImageOps(page *pageSpec, pageHeight float64, imageStreamNums []int) ([]content.Op, model.Dict, model.Dict) {
+	xobj := make(model.Dict)
+	imageGS := model.Dict{}
+	var ops []content.Op
+	imageGSIndex := 0
+
+	for i, im := range page.ImageRuns {
 		imName := model.Name("Im" + fmt.Sprintf("%d", i+1))
 		w, h := im.WidthPt, im.HeightPt
 		if w <= 0 {
@@ -99,6 +158,9 @@ func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []
 		}
 		if h <= 0 {
 			h = float64(im.HeightPx)
+		}
+		if i < len(imageStreamNums) {
+			xobj[imName] = model.Ref{ObjectNumber: imageStreamNums[i], Generation: 0}
 		}
 		if im.HasMCID {
 			ops = append(ops,
@@ -111,11 +173,44 @@ func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []
 				},
 			)
 		}
+		ops = append(ops, content.Op{Name: "q", Args: nil})
+		if im.Opacity > 0 && im.Opacity < 1 {
+			imageGSIndex++
+			gsName := model.Name(fmt.Sprintf("IMGS%d", imageGSIndex))
+			imageGS[gsName] = model.Dict{
+				model.Name("Type"): model.Name("ExtGState"),
+				model.Name("ca"):   model.Real(im.Opacity),
+				model.Name("CA"):   model.Real(im.Opacity),
+			}
+			ops = append(ops, content.Op{Name: "gs", Args: []model.Object{gsName}})
+		}
+		if im.ClipCircle {
+			ops = append(ops, circlePathOps(im.ClipCX, im.ClipCY, im.ClipR)...)
+			ops = append(ops,
+				content.Op{Name: "W", Args: nil},
+				content.Op{Name: "n", Args: nil},
+			)
+		}
+		var a, bb, c, d, e, f float64
+		if im.RotateDeg != 0 {
+			θ := im.RotateDeg * math.Pi / 180
+			cosθ := math.Cos(θ)
+			sinθ := math.Sin(θ)
+			cx := im.X + w/2
+			cy := im.Y + h/2
+			a = w * cosθ
+			bb = -w * sinθ
+			c = h * sinθ
+			d = h * cosθ
+			e = cx - w/2*cosθ - h/2*sinθ
+			f = cy + w/2*sinθ - h/2*cosθ
+		} else {
+			a, bb, c, d, e, f = w, 0, 0, h, im.X, im.Y
+		}
 		ops = append(ops,
-			content.Op{Name: "q", Args: nil},
 			content.Op{Name: "cm", Args: []model.Object{
-				model.Real(w), model.Real(0), model.Real(0), model.Real(h),
-				model.Real(im.X), model.Real(im.Y),
+				model.Real(a), model.Real(bb), model.Real(c), model.Real(d),
+				model.Real(e), model.Real(f),
 			}},
 			content.Op{Name: "Do", Args: []model.Object{imName}},
 			content.Op{Name: "Q", Args: nil},
@@ -124,26 +219,36 @@ func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []
 			ops = append(ops, content.Op{Name: "EMC", Args: nil})
 		}
 	}
+	return ops, xobj, imageGS
+}
+
+// buildPageContent returns content stream bytes and /Resources for graphics, text, and image runs.
+// Draw order: graphics first (backgrounds/borders), then text, then images.
+// When compression is enabled and effective, returns errFlateCompressed as the error.
+func (b *DocumentBuilder) buildPageContent(page *pageSpec, pageHeight float64, imageStreamNums []int) ([]byte, model.Dict, error) {
+	if len(page.GraphicRuns) == 0 && len(page.TextRuns) == 0 && len(page.ImageRuns) == 0 {
+		return nil, nil, fmt.Errorf("no content")
+	}
+
+	ops := b.buildGraphicsOps(page, pageHeight)
+	textOps, fontRes := b.buildTextOps(page, pageHeight, nil)
+	ops = append(ops, textOps...)
+	imageOps, xobj, imageGS := b.buildImageOps(page, pageHeight, imageStreamNums)
+	ops = append(ops, imageOps...)
 
 	contentBytes, err := content.EncodeBytes(ops)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// FlateDecode the content stream for smaller output (unless disabled).
-	compressed := false
-	if !b.noCompressContent {
-		contentBytes, compressed = flateCompress(contentBytes)
-	}
-
 	resources := model.Dict{}
-	if len(textRuns) > 0 {
+	if len(page.TextRuns) > 0 {
 		fontDict := model.Dict{}
 		for base, resName := range fontRes {
 			if base == "" {
 				base = "Helvetica"
 			}
-			if _, isEmbedded := b.embeddedFonts[base]; isEmbedded {
+			if _, isEmbedded := b.fc.embeddedFonts[base]; isEmbedded {
 				// Placeholder: will be replaced with a Ref to the Type0 font in Build().
 				fontDict[resName] = model.Dict{
 					model.Name("_embedded"): model.Name(base),
@@ -161,53 +266,27 @@ func (b *DocumentBuilder) buildPageContent(graphicRuns []graphicRun, textRuns []
 			resources[model.Name("Font")] = fontDict
 		}
 	}
-	if len(imageRuns) > 0 {
-		xobj := make(model.Dict)
-		for i, num := range imageStreamNums {
-			name := model.Name("Im" + fmt.Sprintf("%d", i+1))
-			xobj[name] = model.Ref{ObjectNumber: num, Generation: 0}
-		}
+	if len(page.ImageRuns) > 0 && len(xobj) > 0 {
 		resources[model.Name("XObject")] = xobj
 	}
-	// Collect ExtGState entries from graphicRuns that use transparency/blending.
 	allGS := model.Dict{}
-	for _, gr := range graphicRuns {
-		for name, dict := range gr.extGStates {
+	for _, gr := range page.GraphicRuns {
+		for name, dict := range gr.ExtGStates {
 			allGS[name] = dict
 		}
+	}
+	for name, dict := range imageGS {
+		allGS[name] = dict
 	}
 	if len(allGS) > 0 {
 		resources[model.Name("ExtGState")] = allGS
 	}
 
-	// Return content bytes with an indicator of whether FlateDecode was applied.
-	// The caller uses this to set /Filter on the stream dict.
-	if compressed {
-		return contentBytes, resources, errFlateCompressed
-	}
 	return contentBytes, resources, nil
 }
 
-// sentinel error to signal the caller that content bytes are FlateDecode-compressed.
+// sentinel error kept for compatibility (no longer used internally).
 var errFlateCompressed = fmt.Errorf("flate compressed")
-
-// flateCompress compresses data with zlib. Returns compressed bytes and true on success,
-// or the original bytes and false if compression would increase size or fails.
-func flateCompress(data []byte) ([]byte, bool) {
-	var buf bytes.Buffer
-	w := zlib.NewWriter(&buf)
-	if _, err := w.Write(data); err != nil {
-		w.Close()
-		return data, false
-	}
-	if err := w.Close(); err != nil {
-		return data, false
-	}
-	if buf.Len() >= len(data) {
-		return data, false
-	}
-	return buf.Bytes(), true
-}
 
 func (b *DocumentBuilder) imageXObjectStream(im imageRun) *model.Stream {
 	dict := model.Dict{

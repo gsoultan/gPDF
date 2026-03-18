@@ -1,15 +1,32 @@
 package doc
 
-// Color represents an RGB color with components in [0,1].
-type Color struct {
-	R, G, B float64
-}
+import "gpdf/doc/style"
+
+type Color = style.Color
+
+var ColorFromHex = style.ColorFromHex
+var ColorGray50 = style.Gray
 
 var (
-	ColorBlack = Color{0, 0, 0}
-	ColorWhite = Color{1, 1, 1}
-	ColorRed   = Color{1, 0, 0}
-	ColorGreen = Color{0, 1, 0}
-	ColorBlue  = Color{0, 0, 1}
-	ColorGray  = Color{0.5, 0.5, 0.5}
+	ColorBlack     = style.Black
+	ColorWhite     = style.White
+	ColorRed       = style.Red
+	ColorGreen     = style.Green
+	ColorBlue      = style.Blue
+	ColorGray      = style.GrayColor
+	ColorLightGray = style.LightGray
+	ColorDarkGray  = style.DarkGray
+	ColorOrange    = style.Orange
+	ColorYellow    = style.Yellow
+	ColorPurple    = style.Purple
+	ColorCyan      = style.Cyan
+	ColorMagenta   = style.Magenta
+	ColorPink      = style.Pink
+	ColorBrown     = style.Brown
+	ColorTeal      = style.Teal
+	ColorNavy      = style.Navy
+	ColorMaroon    = style.Maroon
+	ColorOlive     = style.Olive
+	ColorSilver    = style.Silver
+	ColorLime      = style.Lime
 )

@@ -16,7 +16,7 @@ func (b *DocumentBuilder) DrawTextBox(pageIndex int, textStr string, x, y float6
 	if textStr == "" || opts.Width <= 0 {
 		return b
 	}
-	if pageIndex < 0 || pageIndex >= len(b.pages) {
+	if !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -39,7 +39,7 @@ func (b *DocumentBuilder) DrawTaggedParagraphBox(pageIndex int, textStr string, 
 	if textStr == "" || opts.Width <= 0 {
 		return b
 	}
-	if pageIndex < 0 || pageIndex >= len(b.pages) {
+	if !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -59,10 +59,10 @@ func (b *DocumentBuilder) DrawTaggedParagraphBox(pageIndex int, textStr string, 
 // layoutTextIntoPages performs simple line layout for paragraph-like text and appends textRuns.
 // For tagged text, layout is restricted to a single page; AllowPageBreak is ignored in that case.
 func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions, isTagged bool, role model.Name) {
-	if pageIndex < 0 || pageIndex >= len(b.pages) {
+	if !b.pc.validPageIndex(pageIndex) {
 		return
 	}
-	ps := &b.pages[pageIndex]
+	ps := &b.pc.pages[pageIndex]
 
 	lines := b.wrapTextLines(textStr, fontSize, opts.Width, fontName)
 	if len(lines) == 0 {
@@ -79,8 +79,8 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 	currentY := y
 	var mcid int
 	if isTagged {
-		mcid = ps.nextMCID
-		ps.nextMCID++
+		mcid = ps.NextMCID
+		ps.NextMCID++
 		b.tagging.Blocks = append(b.tagging.Blocks, taggedpkg.Block{
 			PageIndex: pageIndex,
 			MCID:      mcid,
@@ -89,12 +89,12 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 		b.tagging.RecordSectionBlock(len(b.tagging.Blocks) - 1)
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if isTagged && currentPage != pageIndex {
 			break
 		}
 		if !isTagged && opts.AllowPageBreak && currentY < marginBottom {
-			if currentPage+1 >= len(b.pages) {
+			if currentPage+1 >= len(b.pc.pages) {
 				break
 			}
 			currentPage++
@@ -103,7 +103,11 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 
 		lineWidth := b.textWidth(line, fontSize, fontName)
 		offsetX := x
+		wordSpacing := 0.0
 		free := opts.Width - lineWidth
+		// A line is the last in its paragraph when it is the final line overall
+		// or when the next line is empty (paragraph break emitted by WrapLines).
+		isLastInParagraph := i == len(lines)-1 || lines[i+1] == ""
 		switch opts.Align {
 		case TextAlignCenter:
 			if free > 0 {
@@ -113,29 +117,47 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 			if free > 0 {
 				offsetX = x + free
 			}
-		default:
+		case TextAlignJustify:
+			if !isLastInParagraph && free > 0 {
+				numSpaces := countWordSpaces(line)
+				if numSpaces > 0 {
+					wordSpacing = free / float64(numSpaces)
+				}
+			}
 		}
 
-		targetPage := &b.pages[currentPage]
+		targetPage := &b.pc.pages[currentPage]
 		r := textRun{
-			Text:     line,
-			X:        offsetX,
-			Y:        currentY,
-			FontName: fontName,
-			FontSize: fontSize,
+			Text:        line,
+			X:           offsetX,
+			Y:           currentY,
+			FontName:    fontName,
+			FontSize:    fontSize,
+			WordSpacing: wordSpacing,
 		}
 		if isTagged {
 			r.MCID = mcid
 			r.HasMCID = true
 			r.UseDefaultColor = true
 		}
-		targetPage.textRuns = append(targetPage.textRuns, r)
+		targetPage.TextRuns = append(targetPage.TextRuns, r)
 		currentY -= opts.LineHeight
 	}
 
 	if opts.ParagraphSpacing > 0 {
 		currentY -= opts.ParagraphSpacing
 	}
+}
+
+// countWordSpaces returns the number of inter-word spaces in s (i.e. space characters).
+func countWordSpaces(s string) int {
+	count := 0
+	for _, ch := range s {
+		if ch == ' ' {
+			count++
+		}
+	}
+	return count
 }
 
 // wrapTextLines splits text into lines that fit within width using font metrics or a heuristic.
@@ -146,7 +168,7 @@ func (b *DocumentBuilder) wrapTextLines(s string, fontSize, width float64, fontN
 
 // fontWidthFunc returns a FontWidthFunc that uses registered font metrics or the fallback heuristic.
 func (b *DocumentBuilder) fontWidthFunc(fontName string) text.FontWidthFunc {
-	if f, ok := b.fonts[fontName]; ok {
+	if f, ok := b.fc.fonts[fontName]; ok {
 		return func(s string, fontSize float64) float64 {
 			return f.TextWidth(s, fontSize)
 		}
@@ -162,7 +184,7 @@ func (b *DocumentBuilder) textWidth(s string, fontSize float64, fontName string)
 	if s == "" || fontSize <= 0 {
 		return 0
 	}
-	if f, ok := b.fonts[fontName]; ok {
+	if f, ok := b.fc.fonts[fontName]; ok {
 		return f.TextWidth(s, fontSize)
 	}
 	return text.ApproxWidth(s, fontSize)
@@ -171,7 +193,7 @@ func (b *DocumentBuilder) textWidth(s string, fontSize float64, fontName string)
 // DrawText queues text to be drawn on the last added page at (x, y) using the given font and size.
 // FontName should be a standard PDF base font (e.g. Helvetica, Times-Roman). Call after AddPage().
 func (b *DocumentBuilder) DrawText(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if len(b.pages) == 0 {
+	if len(b.pc.pages) == 0 {
 		return b
 	}
 	if fontName == "" {
@@ -180,17 +202,195 @@ func (b *DocumentBuilder) DrawText(textStr string, x, y float64, fontName string
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	idx := len(b.pages) - 1
-	b.pages[idx].textRuns = append(b.pages[idx].textRuns, textRun{
+	idx := len(b.pc.pages) - 1
+	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 	})
+	return b
+}
+
+// DrawTextColored queues text drawn in the specified RGB color on the last added page.
+// It behaves like DrawText but sets the fill color for that run.
+func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	idx := len(b.pc.pages) - 1
+	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
+		TextColorRGB: [3]float64{color.R, color.G, color.B},
+	})
+	return b
+}
+
+// DrawTextCentered draws text horizontally centered around the point (cx, y).
+// The text baseline is at y; cx is the horizontal center of the rendered text.
+func (b *DocumentBuilder) DrawTextCentered(textStr string, cx, y float64, fontName string, fontSize float64) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	w := b.textWidth(textStr, fontSize, fontName)
+	return b.DrawText(textStr, cx-w/2, y, fontName, fontSize)
+}
+
+// DrawTextCenteredColored draws colored text horizontally centered around the point (cx, y).
+func (b *DocumentBuilder) DrawTextCenteredColored(textStr string, cx, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	w := b.textWidth(textStr, fontSize, fontName)
+	return b.DrawTextColored(textStr, cx-w/2, y, fontName, fontSize, color)
+}
+
+// DrawTextRight draws text right-aligned so that its right edge is at x.
+func (b *DocumentBuilder) DrawTextRight(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	w := b.textWidth(textStr, fontSize, fontName)
+	return b.DrawText(textStr, x-w, y, fontName, fontSize)
+}
+
+// DrawTextRightColored draws colored text right-aligned so that its right edge is at x.
+func (b *DocumentBuilder) DrawTextRightColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	w := b.textWidth(textStr, fontSize, fontName)
+	return b.DrawTextColored(textStr, x-w, y, fontName, fontSize, color)
+}
+
+// DrawTextWithUnderline draws text with an underline on the last added page.
+func (b *DocumentBuilder) DrawTextWithUnderline(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	idx := len(b.pc.pages) - 1
+	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
+		TextColorRGB: [3]float64{color.R, color.G, color.B},
+		Underline:    true,
+	})
+	return b
+}
+
+// DrawTextWithStrikethrough draws text with a strikethrough line on the last added page.
+func (b *DocumentBuilder) DrawTextWithStrikethrough(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if len(b.pc.pages) == 0 {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	idx := len(b.pc.pages) - 1
+	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
+		TextColorRGB:  [3]float64{color.R, color.G, color.B},
+		Strikethrough: true,
+	})
+	return b
+}
+
+// DrawTextBoxColored lays out wrapped text like DrawTextBox but renders each line in the given color.
+func (b *DocumentBuilder) DrawTextBoxColored(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions, color Color) *DocumentBuilder {
+	if textStr == "" || opts.Width <= 0 {
+		return b
+	}
+	if !b.pc.validPageIndex(pageIndex) {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	if opts.LineHeight <= 0 {
+		opts.LineHeight = fontSize * 1.2
+	}
+	lines := b.wrapTextLines(textStr, fontSize, opts.Width, fontName)
+	curY := y
+	for i, line := range lines {
+		lineWidth := b.textWidth(line, fontSize, fontName)
+		offsetX := x
+		wordSpacing := 0.0
+		free := opts.Width - lineWidth
+		isLastInParagraph := i == len(lines)-1 || lines[i+1] == ""
+		switch opts.Align {
+		case TextAlignCenter:
+			if free > 0 {
+				offsetX = x + free/2
+			}
+		case TextAlignRight:
+			if free > 0 {
+				offsetX = x + free
+			}
+		case TextAlignJustify:
+			if !isLastInParagraph && free > 0 {
+				numSpaces := countWordSpaces(line)
+				if numSpaces > 0 {
+					wordSpacing = free / float64(numSpaces)
+				}
+			}
+		}
+		b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
+			Text:          line,
+			X:             offsetX,
+			Y:             curY,
+			FontName:      fontName,
+			FontSize:      fontSize,
+			TextColorRGB:  [3]float64{color.R, color.G, color.B},
+			LetterSpacing: opts.LetterSpacing,
+			WordSpacing:   wordSpacing,
+		})
+		curY -= opts.LineHeight
+	}
 	return b
 }
 
 // DrawParagraph queues a tagged paragraph (/P) on the given page at (x, y).
 // The text is associated with a structure element so it participates in Tagged PDF reading order.
 func (b *DocumentBuilder) DrawParagraph(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if textStr == "" || pageIndex < 0 || pageIndex >= len(b.pages) {
+	if textStr == "" || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -199,10 +399,10 @@ func (b *DocumentBuilder) DrawParagraph(pageIndex int, textStr string, x, y floa
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	ps := &b.pages[pageIndex]
-	mcid := ps.nextMCID
-	ps.nextMCID++
-	ps.textRuns = append(ps.textRuns, textRun{
+	ps := &b.pc.pages[pageIndex]
+	mcid := ps.NextMCID
+	ps.NextMCID++
+	ps.TextRuns = append(ps.TextRuns, textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -238,7 +438,7 @@ func (b *DocumentBuilder) DrawTaggedCode(pageIndex int, textStr string, x, y flo
 
 // drawTaggedBlock adds a single-line tagged text block with the given structure role.
 func (b *DocumentBuilder) drawTaggedBlock(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, role model.Name) *DocumentBuilder {
-	if textStr == "" || pageIndex < 0 || pageIndex >= len(b.pages) {
+	if textStr == "" || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -248,10 +448,10 @@ func (b *DocumentBuilder) drawTaggedBlock(pageIndex int, textStr string, x, y fl
 		fontSize = 12
 	}
 	b.useTagged = true
-	ps := &b.pages[pageIndex]
-	mcid := ps.nextMCID
-	ps.nextMCID++
-	ps.textRuns = append(ps.textRuns, textRun{
+	ps := &b.pc.pages[pageIndex]
+	mcid := ps.NextMCID
+	ps.NextMCID++
+	ps.TextRuns = append(ps.TextRuns, textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -272,7 +472,7 @@ func (b *DocumentBuilder) drawTaggedBlock(pageIndex int, textStr string, x, y fl
 
 // DrawTaggedQuoteBox lays out wrapped text as a tagged block quote (/Quote).
 func (b *DocumentBuilder) DrawTaggedQuoteBox(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions) *DocumentBuilder {
-	if textStr == "" || opts.Width <= 0 || pageIndex < 0 || pageIndex >= len(b.pages) {
+	if textStr == "" || opts.Width <= 0 || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -290,7 +490,7 @@ func (b *DocumentBuilder) DrawTaggedQuoteBox(pageIndex int, textStr string, x, y
 
 // DrawTaggedCodeBlock lays out wrapped text as a tagged code block (/Code).
 func (b *DocumentBuilder) DrawTaggedCodeBlock(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions) *DocumentBuilder {
-	if textStr == "" || opts.Width <= 0 || pageIndex < 0 || pageIndex >= len(b.pages) {
+	if textStr == "" || opts.Width <= 0 || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -309,7 +509,7 @@ func (b *DocumentBuilder) DrawTaggedCodeBlock(pageIndex int, textStr string, x, 
 // DrawHeading queues a tagged heading (/H1..H6) on the given page at (x, y).
 // Level must be in [1,6]; values outside this range are clamped.
 func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if textStr == "" || pageIndex < 0 || pageIndex >= len(b.pages) {
+	if textStr == "" || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if level < 1 {
@@ -334,10 +534,10 @@ func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, 
 			fontSize = base * 1.1
 		}
 	}
-	ps := &b.pages[pageIndex]
-	mcid := ps.nextMCID
-	ps.nextMCID++
-	ps.textRuns = append(ps.textRuns, textRun{
+	ps := &b.pc.pages[pageIndex]
+	mcid := ps.NextMCID
+	ps.NextMCID++
+	ps.TextRuns = append(ps.TextRuns, textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -361,7 +561,7 @@ func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, 
 // Items are rendered vertically starting at (x, y) with the given lineHeight (or a default when <= 0).
 // When ordered is true, items are prefixed with "1. ", "2. ", ...; otherwise a bullet "• " is used.
 func (b *DocumentBuilder) DrawList(pageIndex int, items []string, x, y, lineHeight float64, ordered bool, fontName string, fontSize float64) *DocumentBuilder {
-	if pageIndex < 0 || pageIndex >= len(b.pages) || len(items) == 0 {
+	if !b.pc.validPageIndex(pageIndex) || len(items) == 0 {
 		return b
 	}
 	if fontName == "" {
@@ -373,7 +573,7 @@ func (b *DocumentBuilder) DrawList(pageIndex int, items []string, x, y, lineHeig
 	if lineHeight <= 0 {
 		lineHeight = fontSize * 1.2
 	}
-	ps := &b.pages[pageIndex]
+	ps := &b.pc.pages[pageIndex]
 	var listItems []taggedpkg.ListItem
 	for idx, raw := range items {
 		if raw == "" {
@@ -385,9 +585,9 @@ func (b *DocumentBuilder) DrawList(pageIndex int, items []string, x, y, lineHeig
 		}
 		itemText := label + raw
 		itemY := y - float64(len(listItems))*lineHeight
-		mcid := ps.nextMCID
-		ps.nextMCID++
-		ps.textRuns = append(ps.textRuns, textRun{
+		mcid := ps.NextMCID
+		ps.NextMCID++
+		ps.TextRuns = append(ps.TextRuns, textRun{
 			Text:            itemText,
 			X:               x,
 			Y:               itemY,

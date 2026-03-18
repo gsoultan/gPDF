@@ -81,13 +81,15 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 	}
 	trailer := model.Trailer{Dict: trailerDict}
 	doc := &pdfDocument{
-		r:               r,
-		size:            size,
-		xref:            tbl,
-		trailer:         trailer,
-		startXRefOffset: startXRef,
-		objects:         make(map[model.Ref]model.Object),
-		filters:         pr.filters,
+		documentCore: documentCore{
+			r:               r,
+			size:            size,
+			xref:            tbl,
+			trailer:         trailer,
+			startXRefOffset: startXRef,
+			objects:         make(map[model.Ref]model.Object),
+			filters:         pr.filters,
+		},
 	}
 	if encRef := trailer.Encrypt(); encRef != nil {
 		encObj, err := doc.resolveRaw(*encRef)
@@ -233,32 +235,39 @@ func (pr *PDFReader) parseXRefStream(r io.ReaderAt, size, offset int64) (map[int
 			if pos+entrySize > len(decoded) {
 				break
 			}
-			field1 := readBEField(decoded[pos:], w1)
-			field2 := readBEField(decoded[pos+w1:], w2)
-			field3 := readBEField(decoded[pos+w1+w2:], w3)
+			entry := decodeXRefStreamEntry(decoded[pos:], w1, w2, w3)
+			entries[start+i] = entry
 			pos += entrySize
-
-			objNum := start + i
-			typ := field1
-			if w1 == 0 {
-				typ = 1
-			}
-			switch typ {
-			case 0:
-				entries[objNum] = syntax.XRefEntry{Offset: int64(field2), Generation: field3, InUse: false}
-			case 1:
-				entries[objNum] = syntax.XRefEntry{Offset: int64(field2), Generation: field3, InUse: true}
-			case 2:
-				entries[objNum] = syntax.XRefEntry{
-					InUse:              true,
-					Compressed:         true,
-					StreamObjectNumber: field2,
-					IndexInStream:      field3,
-				}
-			}
 		}
 	}
 	return entries, s.Dict, nil
+}
+
+// decodeXRefStreamEntry decodes a single entry from an xref stream at the given data offset.
+func decodeXRefStreamEntry(data []byte, w1, w2, w3 int) syntax.XRefEntry {
+	field1 := readBEField(data, w1)
+	field2 := readBEField(data[w1:], w2)
+	field3 := readBEField(data[w1+w2:], w3)
+
+	typ := field1
+	if w1 == 0 {
+		typ = 1
+	}
+	switch typ {
+	case 0:
+		return syntax.XRefEntry{Offset: int64(field2), Generation: field3, InUse: false}
+	case 1:
+		return syntax.XRefEntry{Offset: int64(field2), Generation: field3, InUse: true}
+	case 2:
+		return syntax.XRefEntry{
+			InUse:              true,
+			Compressed:         true,
+			StreamObjectNumber: field2,
+			IndexInStream:      field3,
+		}
+	default:
+		return syntax.XRefEntry{}
+	}
 }
 
 // applyFilters applies the named filter pipeline to data using the given registry.

@@ -3,6 +3,7 @@ package reader_test
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"gpdf/doc"
@@ -11,12 +12,12 @@ import (
 )
 
 func TestReadDocumentWithPasswordDecryptsInfoStrings(t *testing.T) {
-	document, err := doc.New().
+	b := doc.New().
 		Title("Encrypted Title").
 		Author("Alice").
-		Subject("Secret").
-		AddPage().
-		Build()
+		Subject("Secret")
+	b.AddPage()
+	document, err := b.Build()
 	if err != nil {
 		t.Fatalf("Build returned error: %v", err)
 	}
@@ -119,6 +120,160 @@ endobj
 	trailer := fmt.Sprintf("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefStart)
 
 	return append(append(append([]byte{}, header...), body...), []byte(xrefLines+trailer)...), offsets
+}
+
+func TestReaderDocumentContentPerPage(t *testing.T) {
+	b := doc.New().
+		PageSize(595, 842)
+	b.AddPage()
+	b.DrawText("First page text", 50, 700, "Helvetica", 12)
+	b.AddPage()
+	document, err := b.
+		DrawText("Second page text", 50, 700, "Helvetica", 12).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer document.Close()
+
+	var buf bytes.Buffer
+	if err := document.Save(&buf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	parsed, err := reader.NewPDFReader().ReadDocument(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+
+	perPage, err := parsed.ContentPerPage()
+	if err != nil {
+		t.Fatalf("ContentPerPage: %v", err)
+	}
+	if len(perPage) != 2 {
+		t.Fatalf("expected 2 pages, got %d", len(perPage))
+	}
+	if !strings.Contains(perPage[0], "First page text") {
+		t.Errorf("page 0: expected 'First page text', got %q", perPage[0])
+	}
+	if !strings.Contains(perPage[1], "Second page text") {
+		t.Errorf("page 1: expected 'Second page text', got %q", perPage[1])
+	}
+}
+
+func TestReaderDocumentSearch(t *testing.T) {
+	b := doc.New().
+		PageSize(595, 842)
+	b.AddPage()
+	b.DrawText("The quick brown fox", 50, 700, "Helvetica", 12)
+	b.AddPage()
+	document, err := b.
+		DrawText("The lazy dog", 50, 700, "Helvetica", 12).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer document.Close()
+
+	var buf bytes.Buffer
+	if err := document.Save(&buf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	parsed, err := reader.NewPDFReader().ReadDocument(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+
+	results, err := parsed.Search("quick", "lazy", "nothere")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 search results, got %d", len(results))
+	}
+	if len(results[0].Pages) != 1 || results[0].Pages[0] != 0 {
+		t.Errorf("'quick' should be on page 0, got %v", results[0].Pages)
+	}
+	if len(results[1].Pages) != 1 || results[1].Pages[0] != 1 {
+		t.Errorf("'lazy' should be on page 1, got %v", results[1].Pages)
+	}
+	if len(results[2].Pages) != 0 {
+		t.Errorf("'nothere' should not be found, got %v", results[2].Pages)
+	}
+}
+
+func TestReaderDocumentReplace(t *testing.T) {
+	b := doc.New().
+		PageSize(595, 842)
+	b.AddPage()
+	document, err := b.
+		DrawText("Hello World", 50, 700, "Helvetica", 12).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer document.Close()
+
+	var buf bytes.Buffer
+	if err := document.Save(&buf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	parsed, err := reader.NewPDFReader().ReadDocument(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+
+	if err := parsed.Replace("Hello", "Hi"); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+
+	content, err := parsed.Content()
+	if err != nil {
+		t.Fatalf("Content: %v", err)
+	}
+	if !strings.Contains(content, "Hi World") {
+		t.Errorf("expected 'Hi World' after replace, got %q", content)
+	}
+	if strings.Contains(content, "Hello") {
+		t.Errorf("'Hello' should be replaced, got %q", content)
+	}
+}
+
+func TestReaderDocumentReplaces(t *testing.T) {
+	b := doc.New().
+		PageSize(595, 842)
+	b.AddPage()
+	document, err := b.
+		DrawText("foo and bar", 50, 700, "Helvetica", 12).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer document.Close()
+
+	var buf bytes.Buffer
+	if err := document.Save(&buf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	parsed, err := reader.NewPDFReader().ReadDocument(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("ReadDocument: %v", err)
+	}
+
+	if err := parsed.Replaces(map[string]string{"foo": "one", "bar": "two"}); err != nil {
+		t.Fatalf("Replaces: %v", err)
+	}
+
+	content, err := parsed.Content()
+	if err != nil {
+		t.Fatalf("Content: %v", err)
+	}
+	if !strings.Contains(content, "one") || !strings.Contains(content, "two") {
+		t.Errorf("expected both replacements, got %q", content)
+	}
 }
 
 func stringFromInfo(info model.Dict, key string) string {

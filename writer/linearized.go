@@ -8,6 +8,69 @@ import (
 	"gpdf/model"
 )
 
+// resolveFirstPageRef resolves catalog->Pages->Kids to the first page ref and page count.
+// Returns (firstPageRef, numPages, error). firstPageRef may be nil if not found.
+func resolveFirstPageRef(doc Document) (*model.Ref, int, error) {
+	root := doc.Trailer().Root()
+	if root == nil {
+		return nil, 0, nil
+	}
+	cat, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
+	if err != nil {
+		return nil, 0, err
+	}
+	catDict, ok := cat.(model.Dict)
+	if !ok {
+		return nil, 0, nil
+	}
+	pagesRef, ok := catDict[model.Name("Pages")].(model.Ref)
+	if !ok {
+		return nil, 0, nil
+	}
+	pagesObj, err := doc.Resolve(pagesRef)
+	if err != nil {
+		return nil, 0, err
+	}
+	pagesDict, ok := pagesObj.(model.Dict)
+	if !ok {
+		return nil, 0, nil
+	}
+	numPages := 1
+	if c, ok := pagesDict[model.Name("Count")].(model.Integer); ok {
+		numPages = int(c)
+	}
+	kids, ok := pagesDict[model.Name("Kids")].(model.Array)
+	if !ok || len(kids) == 0 {
+		return nil, numPages, nil
+	}
+	firstRef, ok := kids[0].(model.Ref)
+	if !ok {
+		return nil, numPages, nil
+	}
+	return &firstRef, numPages, nil
+}
+
+// writeObjectSet writes a set of objects to ws and returns their file offsets.
+func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document) (map[int]int64, error) {
+	offsets := make(map[int]int64)
+	for _, num := range objNums {
+		ref := model.Ref{ObjectNumber: num, Generation: 0}
+		obj, err := doc.Resolve(ref)
+		if err != nil {
+			return nil, err
+		}
+		pos, err := ws.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return nil, err
+		}
+		offsets[num] = pos
+		if err := pw.writeIndirectObject(ws, num, 0, obj); err != nil {
+			return nil, err
+		}
+	}
+	return offsets, nil
+}
+
 // WriteLinearized writes a linearized (fast web view) PDF to ws.
 // The writer must be seekable so that the linearization parameter dictionary (object 0)
 // and the first-page trailer can be updated with correct offsets after the rest is written.
@@ -36,42 +99,13 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 			restNums = append(restNums, n)
 		}
 	}
-	// First page object number (for /O): the Page dict that is the first kid of Pages
-	firstPageObjNum := 0
-	if len(firstPageNums) > 0 {
-		firstPageObjNum = firstPageNums[len(firstPageNums)-1] // heuristic: often the last in dependency order
-		root := doc.Trailer().Root()
-		if root != nil {
-			cat, _ := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
-			if catDict, ok := cat.(model.Dict); ok {
-				if pagesRef, ok := catDict[model.Name("Pages")].(model.Ref); ok {
-					pagesObj, _ := doc.Resolve(pagesRef)
-					if pagesDict, ok := pagesObj.(model.Dict); ok {
-						if kids, ok := pagesDict[model.Name("Kids")].(model.Array); ok && len(kids) > 0 {
-							if firstRef, ok := kids[0].(model.Ref); ok {
-								firstPageObjNum = firstRef.ObjectNumber
-							}
-						}
-					}
-				}
-			}
-		}
+	firstPageRef, numPages, err := resolveFirstPageRef(doc)
+	if err != nil {
+		return err
 	}
-	numPages := 1
-	if root := doc.Trailer().Root(); root != nil {
-		if pagesObj, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0}); err == nil {
-			if catDict, ok := pagesObj.(model.Dict); ok {
-				if pagesRef, ok := catDict[model.Name("Pages")].(model.Ref); ok {
-					if pObj, err := doc.Resolve(pagesRef); err == nil {
-						if pDict, ok := pObj.(model.Dict); ok {
-							if c, ok := pDict[model.Name("Count")].(model.Integer); ok {
-								numPages = int(c)
-							}
-						}
-					}
-				}
-			}
-		}
+	firstPageObjNum := 0
+	if firstPageRef != nil {
+		firstPageObjNum = firstPageRef.ObjectNumber
 	}
 	maxNum := allNums[len(allNums)-1]
 	totalObjs := maxNum + 1 // include object 0
@@ -80,30 +114,30 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	if _, err := ws.Write([]byte(header)); err != nil {
 		return err
 	}
-	pos0, _ := ws.Seek(0, io.SeekCurrent)
+	pos0, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
 	// Write object 0: linearization parameter dict (placeholders for /L and /H)
 	linDict := fmt.Sprintf("%d 0 obj\n<< /Linearized 1 /L 0000000000 /H [ 0000000000 0000000000 ] /O %d /N %d /T %d >>\nendobj\n",
 		0, firstPageObjNum, numPages, totalObjs)
 	if _, err := io.WriteString(ws, linDict); err != nil {
 		return err
 	}
-	firstPageBodyEnd, _ := ws.Seek(0, io.SeekCurrent)
-	// Write first-page objects (object 0 already written; firstPageNums are 1..N)
-	offsetsFirst := make(map[int]int64)
-	offsetsFirst[0] = pos0
-	for _, num := range firstPageNums {
-		ref := model.Ref{ObjectNumber: num, Generation: 0}
-		obj, err := doc.Resolve(ref)
-		if err != nil {
-			return err
-		}
-		pos, _ := ws.Seek(0, io.SeekCurrent)
-		offsetsFirst[num] = pos
-		if err := pw.writeIndirectObject(ws, num, 0, obj); err != nil {
-			return err
-		}
+	firstPageBodyEnd, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
 	}
-	firstXrefStart, _ := ws.Seek(0, io.SeekCurrent)
+	// Write first-page objects (object 0 already written; firstPageNums are 1..N)
+	offsetsFirst, err := pw.writeObjectSet(ws, firstPageNums, doc)
+	if err != nil {
+		return err
+	}
+	offsetsFirst[0] = pos0
+	firstXrefStart, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
 	// First xref: 0 through max of first section
 	maxFirst := 0
 	for n := range offsetsFirst {
@@ -129,20 +163,14 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	xrefLineLen := 20
 	prevValueOffset := firstXrefStart + int64(5+2+(maxFirst+1)*xrefLineLen) + int64(len("trailer\n<< /Root ")+len(fmt.Sprintf("%d", rootNum))+len(" 0 R /Size ")+len(fmt.Sprintf("%d", maxNum+1))+len(" /Prev "))
 	// Rest: remaining objects, then main xref, main trailer
-	offsetsRest := make(map[int]int64)
-	for _, num := range restNums {
-		ref := model.Ref{ObjectNumber: num, Generation: 0}
-		obj, err := doc.Resolve(ref)
-		if err != nil {
-			return err
-		}
-		pos, _ := ws.Seek(0, io.SeekCurrent)
-		offsetsRest[num] = pos
-		if err := pw.writeIndirectObject(ws, num, 0, obj); err != nil {
-			return err
-		}
+	offsetsRest, err := pw.writeObjectSet(ws, restNums, doc)
+	if err != nil {
+		return err
 	}
-	mainXrefStart, _ := ws.Seek(0, io.SeekCurrent)
+	mainXrefStart, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
 	allOffsets := make(map[int]int64)
 	for k, v := range offsetsFirst {
 		allOffsets[k] = v

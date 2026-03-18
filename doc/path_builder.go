@@ -2,6 +2,7 @@ package doc
 
 import (
 	"fmt"
+	"math"
 
 	"gpdf/content"
 	"gpdf/model"
@@ -59,6 +60,60 @@ func (p *PathBuilder) Rect(x, y, w, h float64) *PathBuilder {
 // ClosePath closes the current subpath with a straight line back to its starting point.
 func (p *PathBuilder) ClosePath() *PathBuilder {
 	p.pathOps = append(p.pathOps, content.Op{Name: "h"})
+	return p
+}
+
+// Arc appends an elliptical arc centered at (cx, cy) with semi-axes rx and ry.
+// startDeg is the start angle in degrees (0 = rightmost point), sweepDeg is the
+// angular extent (positive = counter-clockwise in PDF user space).
+// The arc is approximated with cubic Bézier curves (max 90° per segment).
+func (p *PathBuilder) Arc(cx, cy, rx, ry, startDeg, sweepDeg float64) *PathBuilder {
+	if rx <= 0 || ry <= 0 || sweepDeg == 0 {
+		return p
+	}
+	// Break into ≤90° segments.
+	steps := int(math.Ceil(math.Abs(sweepDeg) / 90.0))
+	segSweep := sweepDeg / float64(steps)
+	angle := startDeg
+	for range steps {
+		a0 := angle * math.Pi / 180
+		a1 := (angle + segSweep) * math.Pi / 180
+		da := a1 - a0
+		// Bézier control-point length for the arc segment.
+		alpha := math.Sin(da) * (math.Sqrt(4+3*math.Pow(math.Tan(da/2), 2)) - 1) / 3
+		cos0, sin0 := math.Cos(a0), math.Sin(a0)
+		cos1, sin1 := math.Cos(a1), math.Sin(a1)
+		x0 := cx + rx*cos0
+		y0 := cy + ry*sin0
+		x3 := cx + rx*cos1
+		y3 := cy + ry*sin1
+		x1 := x0 + alpha*(-rx*sin0)
+		y1 := y0 + alpha*(ry*cos0)
+		x2 := x3 - alpha*(-rx*sin1)
+		y2 := y3 - alpha*(ry*cos1)
+		if angle == startDeg {
+			p.pathOps = append(p.pathOps, content.Op{
+				Name: "m",
+				Args: []model.Object{model.Real(x0), model.Real(y0)},
+			})
+		}
+		p.pathOps = append(p.pathOps, content.Op{
+			Name: "c",
+			Args: []model.Object{
+				model.Real(x1), model.Real(y1),
+				model.Real(x2), model.Real(y2),
+				model.Real(x3), model.Real(y3),
+			},
+		})
+		angle += segSweep
+	}
+	return p
+}
+
+// RoundedRect appends a closed rounded-rectangle subpath at (x,y) with size w×h
+// and corner radius r.
+func (p *PathBuilder) RoundedRect(x, y, w, h, r float64) *PathBuilder {
+	p.pathOps = append(p.pathOps, roundedRectPathOps(x, y, w, h, r)...)
 	return p
 }
 
@@ -135,21 +190,21 @@ func (p *PathBuilder) commitWithState(ops []content.Op, state *GraphicsState) *D
 	wrapped = append(wrapped, content.Op{Name: "q"})
 
 	var extGStates map[model.Name]model.Dict
-	if state != nil && !state.isDefault() {
-		ps := &p.builder.pages[p.pageIndex]
-		gsName := model.Name(fmt.Sprintf("GS%d", ps.nextGSIndex+1))
-		ps.nextGSIndex++
+	if state != nil && !state.IsDefault() {
+		ps := &p.builder.pc.pages[p.pageIndex]
+		gsName := model.Name(fmt.Sprintf("GS%d", ps.NextGSIndex+1))
+		ps.NextGSIndex++
 		wrapped = append(wrapped, content.Op{
 			Name: "gs",
 			Args: []model.Object{gsName},
 		})
-		extGStates = map[model.Name]model.Dict{gsName: state.extGStateDict()}
+		extGStates = map[model.Name]model.Dict{gsName: state.ExtGStateDict()}
 	}
 
 	wrapped = append(wrapped, ops...)
 	wrapped = append(wrapped, content.Op{Name: "Q"})
-	ps := &p.builder.pages[p.pageIndex]
-	ps.graphicRuns = append(ps.graphicRuns, graphicRun{ops: wrapped, extGStates: extGStates})
+	ps := &p.builder.pc.pages[p.pageIndex]
+	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{Ops: wrapped, ExtGStates: extGStates})
 	return p.builder
 }
 
@@ -158,7 +213,7 @@ func strokeStateOps(style LineStyle) []content.Op {
 	var ops []content.Op
 	ops = append(ops, content.Op{
 		Name: "w",
-		Args: []model.Object{model.Real(style.resolvedWidth())},
+		Args: []model.Object{model.Real(style.ResolvedWidth())},
 	})
 	if style.Cap != LineCapButt {
 		ops = append(ops, content.Op{

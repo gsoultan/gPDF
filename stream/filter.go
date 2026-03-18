@@ -9,11 +9,3 @@ type Filter interface {
 	// Encode encodes src and writes to dst.
 	Encode(dst io.Writer, src io.Reader, name string) error
 }
-
-// FilterRegistry maps PDF filter names to Filter implementations.
-type FilterRegistry interface {
-	// Get returns the filter for the given name, or nil if not supported.
-	Get(name string) Filter
-	// Register adds a filter for the given name.
-	Register(name string, f Filter)
-}

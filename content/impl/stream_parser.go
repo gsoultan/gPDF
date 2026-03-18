@@ -72,12 +72,59 @@ func (p *StreamParser) nextOp(tok *contentTokenizer, args *[]model.Object) (*con
 			return nil, fmt.Errorf("unexpected >>")
 		case ctOp:
 			name := t.value
+			if name == "BI" {
+				*args = (*args)[:0]
+				op, err := p.parseInlineImage(tok)
+				if err != nil {
+					return nil, err
+				}
+				return op, nil
+			}
 			operands := make([]model.Object, len(*args))
 			copy(operands, *args)
 			*args = (*args)[:0]
 			return &content.Op{Name: name, Args: operands}, nil
 		}
 	}
+}
+
+// parseInlineImage parses an inline image starting just after the BI operator.
+// It reads the image parameter dictionary (key/value pairs until ID), skips the
+// raw image data, consumes EI, and returns a single "BI" Op whose Args contain
+// the parameter dict as a model.Dict followed by the raw image bytes as a model.String.
+func (p *StreamParser) parseInlineImage(tok *contentTokenizer) (*content.Op, error) {
+	params := make(model.Dict)
+	for {
+		t, err := tok.Next()
+		if err != nil {
+			return nil, fmt.Errorf("inline image: %w", err)
+		}
+		if t.kind == ctEOF {
+			return nil, fmt.Errorf("inline image: unexpected EOF before ID")
+		}
+		if t.kind == ctOp && t.value == "ID" {
+			break
+		}
+		if t.kind != ctName {
+			continue // skip unexpected tokens
+		}
+		key := model.Name(t.value)
+		val, err := p.parseDictValue(tok)
+		if err != nil {
+			return nil, fmt.Errorf("inline image param %s: %w", key, err)
+		}
+		params[key] = val
+	}
+	// After ID there is exactly one whitespace byte, then raw image data until EI.
+	// We scan the raw reader for the EI marker.
+	imgData, err := tok.readUntilEI()
+	if err != nil {
+		return nil, fmt.Errorf("inline image data: %w", err)
+	}
+	return &content.Op{
+		Name: "BI",
+		Args: []model.Object{params, model.String(imgData)},
+	}, nil
 }
 
 func (p *StreamParser) parseArray(tok *contentTokenizer) (model.Array, error) {

@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"fmt"
 	"io"
 
 	"gpdf/model"
@@ -18,12 +19,12 @@ type builtDocument struct {
 func (d *builtDocument) Catalog() (*model.Catalog, error) {
 	root := d.trailer.Root()
 	if root == nil {
-		return nil, nil
+		return nil, fmt.Errorf("catalog: missing /Root in trailer")
 	}
 	obj := d.objects[root.ObjectNumber]
 	dict, ok := obj.(model.Dict)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("catalog: root object %d is not a dict", root.ObjectNumber)
 	}
 	return &model.Catalog{Dict: dict}, nil
 }
@@ -31,26 +32,26 @@ func (d *builtDocument) Catalog() (*model.Catalog, error) {
 func (d *builtDocument) Pages() ([]model.Page, error) {
 	root := d.trailer.Root()
 	if root == nil {
-		return nil, nil
+		return nil, fmt.Errorf("pages: missing /Root in trailer")
 	}
 	// Find Pages ref from catalog
 	catObj := d.objects[root.ObjectNumber]
 	cat, ok := catObj.(model.Dict)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("pages: root object %d is not a dict", root.ObjectNumber)
 	}
 	pagesRef, ok := cat[model.Name("Pages")].(model.Ref)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("pages: missing /Pages in catalog")
 	}
 	pagesObj := d.objects[pagesRef.ObjectNumber]
 	pagesDict, ok := pagesObj.(model.Dict)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("pages: object %d is not a dict", pagesRef.ObjectNumber)
 	}
 	kids, ok := pagesDict[model.Name("Kids")].(model.Array)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("pages: missing /Kids in Pages dict")
 	}
 	var out []model.Page
 	for _, k := range kids {
@@ -92,6 +93,30 @@ func (d *builtDocument) ReadContent() (string, error) {
 	return reader.ExtractText(d)
 }
 
+func (d *builtDocument) ReadContentPerPage() ([]string, error) {
+	return reader.ExtractTextPerPage(d)
+}
+
+func (d *builtDocument) ReadImages() ([]reader.ImageInfo, error) {
+	return reader.ExtractImages(d)
+}
+
+func (d *builtDocument) ReadImagesPerPage() ([][]reader.ImageInfo, error) {
+	return reader.ExtractImagesPerPage(d)
+}
+
+func (d *builtDocument) ReadLayout() ([]reader.PageLayout, error) {
+	return reader.ExtractLayout(d)
+}
+
+func (d *builtDocument) ReadTables() ([][]reader.Table, error) {
+	layouts, err := reader.ExtractLayout(d)
+	if err != nil {
+		return nil, err
+	}
+	return reader.DetectTables(layouts), nil
+}
+
 func (d *builtDocument) Search(keywords ...string) ([]model.SearchResult, error) {
 	perPage, err := reader.ExtractTextPerPage(d)
 	if err != nil {
@@ -122,7 +147,7 @@ func (d *builtDocument) Trailer() model.Trailer { return d.trailer }
 func (d *builtDocument) Resolve(ref model.Ref) (model.Object, error) {
 	obj, ok := d.objects[ref.ObjectNumber]
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("object %d not found", ref.ObjectNumber)
 	}
 	return obj, nil
 }
@@ -138,15 +163,15 @@ func (d *builtDocument) ObjectNumbers() []int {
 func (d *builtDocument) Info() (model.Dict, error) {
 	infoRef := d.trailer.Info()
 	if infoRef == nil {
-		return nil, nil
+		return nil, fmt.Errorf("info: missing /Info in trailer")
 	}
 	obj, ok := d.objects[infoRef.ObjectNumber]
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("info: object %d not found", infoRef.ObjectNumber)
 	}
 	dict, ok := obj.(model.Dict)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("info: object %d is not a dict", infoRef.ObjectNumber)
 	}
 	return dict, nil
 }
@@ -158,15 +183,15 @@ func (d *builtDocument) MetadataStream() ([]byte, error) {
 	}
 	ref := cat.MetadataRef()
 	if ref == nil {
-		return nil, nil
+		return nil, fmt.Errorf("metadata: no /Metadata ref in catalog")
 	}
 	obj, ok := d.objects[ref.ObjectNumber]
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("metadata: object %d not found", ref.ObjectNumber)
 	}
 	stream, ok := obj.(*model.Stream)
 	if !ok || stream == nil {
-		return nil, nil
+		return nil, fmt.Errorf("metadata: object %d is not a stream", ref.ObjectNumber)
 	}
 	return stream.Content, nil
 }

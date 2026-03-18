@@ -25,8 +25,8 @@ func main() {
 		Title("gPDF Quotation Example").
 		Author("gPDF").
 		Subject("Quotation with image and table-style layout").
-		PageSize(595, 842).
-		AddPage()
+		PageSize(595, 842)
+	builder.AddPage()
 
 	// First page: heading and introductory text (using simple text runs).
 	builder = builder.

@@ -122,10 +122,103 @@ func TestStreamParser_Parse(t *testing.T) {
 			t.Errorf("TJ array len: want 3, got %d", len(arr))
 		}
 	})
+
+	t.Run("hex string odd nibble is padded", func(t *testing.T) {
+		ops, err := parser.Parse([]byte("<414> Tj"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ops) != 1 {
+			t.Fatalf("expected 1 op, got %d", len(ops))
+		}
+		if ops[0].Name != "Tj" || len(ops[0].Args) != 1 {
+			t.Fatalf("op: want Tj with 1 arg, got %q len(args)=%d", ops[0].Name, len(ops[0].Args))
+		}
+		s, ok := ops[0].Args[0].(model.String)
+		if !ok {
+			t.Fatalf("Tj arg: want String, got %T", ops[0].Args[0])
+		}
+		if got, want := string(s), "A@"; got != want {
+			t.Fatalf("hex string decode mismatch: got %q, want %q", got, want)
+		}
+	})
 }
 
 func TestStreamParser_ImplementsInterface(t *testing.T) {
 	var _ content.Parser = (*StreamParser)(nil)
+}
+
+func TestStreamParser_InlineImage(t *testing.T) {
+	// BI with a small inline image dict, ID, raw data bytes, then EI
+	stream := []byte("q BI /W 2 /H 1 /CS /G /BPC 8 ID \xff\xfe \nEI Q")
+	parser := NewStreamParser()
+	ops, err := parser.Parse(stream)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	// Expect: q, BI, Q
+	if len(ops) != 3 {
+		t.Fatalf("expected 3 ops (q, BI, Q), got %d: %v", len(ops), ops)
+	}
+	if ops[0].Name != "q" {
+		t.Errorf("op[0]: want q, got %q", ops[0].Name)
+	}
+	if ops[1].Name != "BI" {
+		t.Errorf("op[1]: want BI, got %q", ops[1].Name)
+	}
+	if len(ops[1].Args) != 2 {
+		t.Fatalf("BI args: want 2 (dict + data), got %d", len(ops[1].Args))
+	}
+	dict, ok := ops[1].Args[0].(model.Dict)
+	if !ok {
+		t.Fatalf("BI arg[0]: want Dict, got %T", ops[1].Args[0])
+	}
+	if dict[model.Name("W")] != model.Integer(2) {
+		t.Errorf("BI dict /W: want 2, got %v", dict[model.Name("W")])
+	}
+	if ops[2].Name != "Q" {
+		t.Errorf("op[2]: want Q, got %q", ops[2].Name)
+	}
+}
+
+func TestStreamParser_OctalEscape(t *testing.T) {
+	// \101 = 'A' (65), \012 = '\n' (10), \7 = 7
+	stream := []byte("(\\101\\012\\7) Tj")
+	parser := NewStreamParser()
+	ops, err := parser.Parse(stream)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if len(ops) != 1 || ops[0].Name != "Tj" {
+		t.Fatalf("expected 1 Tj op, got %d ops", len(ops))
+	}
+	s, ok := ops[0].Args[0].(model.String)
+	if !ok {
+		t.Fatalf("Tj arg: want String, got %T", ops[0].Args[0])
+	}
+	if got, want := string(s), "A\n\x07"; got != want {
+		t.Errorf("octal escape: got %q, want %q", got, want)
+	}
+}
+
+func TestStreamParser_LineContinuation(t *testing.T) {
+	// \<newline> should be ignored (line continuation)
+	stream := []byte("(hel\\\nlo) Tj")
+	parser := NewStreamParser()
+	ops, err := parser.Parse(stream)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 op, got %d", len(ops))
+	}
+	s, ok := ops[0].Args[0].(model.String)
+	if !ok {
+		t.Fatalf("Tj arg: want String, got %T", ops[0].Args[0])
+	}
+	if got, want := string(s), "hello"; got != want {
+		t.Errorf("line continuation: got %q, want %q", got, want)
+	}
 }
 
 // Ensure we can round-trip: parse then re-express (smoke test for operand types).
