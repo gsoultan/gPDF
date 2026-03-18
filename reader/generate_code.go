@@ -35,6 +35,9 @@ func (out *codeOutput) writef(format string, args ...any) error {
 
 // GenerateCode reconstructs an existing PDF into Go source using the public doc builder API.
 func GenerateCode(src contentSource, opts CodeGenOptions) (GeneratedCode, error) {
+	if err := ValidateCodeGenOptions(opts); err != nil {
+		return GeneratedCode{}, err
+	}
 	options := normalizeCodeGenOptions(opts)
 	var out strings.Builder
 	assets, err := generateCodeTo(src, &out, options)
@@ -46,6 +49,9 @@ func GenerateCode(src contentSource, opts CodeGenOptions) (GeneratedCode, error)
 
 // GenerateCodeTo writes generated Go source incrementally to out and returns optional binary assets.
 func GenerateCodeTo(src contentSource, out io.Writer, opts CodeGenOptions) ([]GeneratedAsset, error) {
+	if err := ValidateCodeGenOptions(opts); err != nil {
+		return nil, err
+	}
 	return generateCodeTo(src, out, normalizeCodeGenOptions(opts))
 }
 

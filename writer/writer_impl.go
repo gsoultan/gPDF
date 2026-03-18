@@ -2,7 +2,6 @@ package writer
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -21,7 +20,9 @@ import (
 
 // PDFWriter implements Writer for PDF 2.0 output.
 type PDFWriter struct {
-	filters stream.FilterRegistry
+	filters       stream.FilterRegistry
+	randomSource  io.Reader
+	validateGraph bool
 }
 
 // NewPDFWriter returns a PDF writer with default stream filters registered.
@@ -32,18 +33,45 @@ func NewPDFWriter() *PDFWriter {
 	reg.Register("LZWDecode", lzwfilter.NewFilter())
 	reg.Register("ASCII85Decode", ascii85filter.NewFilter())
 	reg.Register("ASCIIHexDecode", asciihex.NewFilter())
-	return &PDFWriter{filters: reg}
+	return NewPDFWriterWithOptions(WriterOptions{Filters: reg})
 }
 
 // NewPDFWriterWithFilters returns a PDF writer using the given filter registry.
 func NewPDFWriterWithFilters(filters stream.FilterRegistry) *PDFWriter {
-	return &PDFWriter{filters: filters}
+	return NewPDFWriterWithOptions(WriterOptions{Filters: filters})
+}
+
+// NewPDFWriterWithOptions returns a PDF writer using custom options.
+func NewPDFWriterWithOptions(options WriterOptions) *PDFWriter {
+	opts := normalizeWriterOptions(options)
+	filters := opts.Filters
+	if filters == nil {
+		filters = stream.NewRegistry()
+		filters.Register("FlateDecode", flate.NewFilter())
+		filters.Register("DCTDecode", dct.NewFilter())
+		filters.Register("LZWDecode", lzwfilter.NewFilter())
+		filters.Register("ASCII85Decode", ascii85filter.NewFilter())
+		filters.Register("ASCIIHexDecode", asciihex.NewFilter())
+	}
+	return &PDFWriter{
+		filters:       filters,
+		randomSource:  opts.RandomSource,
+		validateGraph: *opts.ValidateGraph,
+	}
 }
 
 // Write writes the document to w.
 func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
+	if pw.validateGraph {
+		if err := validateDocumentGraph(doc); err != nil {
+			return err
+		}
+	}
 	objNums := doc.ObjectNumbers()
+	if len(objNums) == 0 {
+		return fmt.Errorf("%w: document has no objects", ErrInvalidDocumentGraph)
+	}
 	sort.Ints(objNums)
 	offsets := make(map[int]int64)
 	var body bytes.Buffer
@@ -99,15 +127,20 @@ func (pw *PDFWriter) WriteWithAES256Password(w io.Writer, doc Document, userPass
 
 func (pw *PDFWriter) writeEncrypted(w io.Writer, doc Document, buildEncrypt func(id []byte) (model.Dict, security.Encryptor, error)) error {
 	const header = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
+	if pw.validateGraph {
+		if err := validateDocumentGraph(doc); err != nil {
+			return err
+		}
+	}
 	objNums := doc.ObjectNumbers()
 	if len(objNums) == 0 {
-		return fmt.Errorf("document has no objects")
+		return fmt.Errorf("%w: document has no objects", ErrInvalidDocumentGraph)
 	}
 	sort.Ints(objNums)
 	maxNum := objNums[len(objNums)-1]
 	encryptNum := maxNum + 1
 	id := make([]byte, 16)
-	if _, err := rand.Read(id); err != nil {
+	if _, err := io.ReadFull(pw.randomSource, id); err != nil {
 		return err
 	}
 	encDict, enc, err := buildEncrypt(id)
@@ -331,9 +364,14 @@ func (pw *PDFWriter) writeXRefTable(w io.Writer, doc Document, objNums []int, of
 
 // WriteIncremental appends an incremental update (new objects + xref + trailer with /Prev + startxref + %%EOF) to w.
 func (pw *PDFWriter) WriteIncremental(w io.Writer, appendOffset int64, baseStartXRef int64, doc Document) error {
+	if pw.validateGraph {
+		if err := validateIncrementalDocumentGraph(doc); err != nil {
+			return err
+		}
+	}
 	objNums := doc.ObjectNumbers()
 	if len(objNums) == 0 {
-		return fmt.Errorf("incremental update requires at least one object")
+		return fmt.Errorf("%w: incremental update requires at least one object", ErrInvalidDocumentGraph)
 	}
 	sort.Ints(objNums)
 	offsets := make(map[int]int64)

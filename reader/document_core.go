@@ -23,6 +23,8 @@ type documentCore struct {
 	xref            xref.Table
 	trailer         model.Trailer
 	startXRefOffset int64
+	maxStreamBytes  int
+	maxFilterChain  int
 	filters         stream.FilterRegistry
 	decryptor       security.Decryptor
 	version         PDFVersion
@@ -318,5 +320,5 @@ func (c *documentCore) decodeStream(s *model.Stream, ref model.Ref) ([]byte, err
 		}
 		data = dec
 	}
-	return applyFilters(data, s.Dict[model.Name("Filter")], c.filters)
+	return applyFiltersWithLimits(data, s.Dict[model.Name("Filter")], c.filters, c.maxStreamBytes, c.maxFilterChain)
 }

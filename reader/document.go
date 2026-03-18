@@ -14,4 +14,5 @@ type Document interface {
 	StructureProvider
 	OutlineProvider
 	FormProvider
+	ValidationProvider
 }

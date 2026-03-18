@@ -380,3 +380,78 @@ func (d *pdfDocument) Tables() ([][]Table, error) {
 	}
 	return DetectTables(layouts), nil
 }
+
+func (d *pdfDocument) Validate(level ValidationLevel) (ValidationReport, error) {
+	if !isValidationLevel(level) {
+		return ValidationReport{}, fmt.Errorf("%w: %d", ErrInvalidValidationLevel, level)
+	}
+
+	report := ValidationReport{Level: level}
+	root := d.trailer.Root()
+	if root == nil {
+		report.Diagnostics = appendValidationError(report.Diagnostics, "TRAILER_ROOT_MISSING", "trailer missing /Root", 0)
+		return report, validationErrorOrNil(report.Diagnostics)
+	}
+
+	if _, err := d.Resolve(*root); err != nil {
+		report.Diagnostics = appendValidationError(report.Diagnostics, "CATALOG_RESOLVE_FAILED", err.Error(), root.ObjectNumber)
+		return report, validationErrorOrNil(report.Diagnostics)
+	}
+
+	if level >= ValidationStructural {
+		catalog, err := d.Catalog()
+		if err != nil {
+			report.Diagnostics = appendValidationError(report.Diagnostics, "CATALOG_INVALID", err.Error(), root.ObjectNumber)
+			return report, validationErrorOrNil(report.Diagnostics)
+		}
+		pagesRef, ok := catalog.Dict[model.Name("Pages")].(model.Ref)
+		if !ok {
+			report.Diagnostics = appendValidationError(report.Diagnostics, "PAGES_ROOT_MISSING", "catalog missing /Pages reference", root.ObjectNumber)
+			return report, validationErrorOrNil(report.Diagnostics)
+		}
+		if _, err := d.Resolve(pagesRef); err != nil {
+			report.Diagnostics = appendValidationError(report.Diagnostics, "PAGES_ROOT_RESOLVE_FAILED", err.Error(), pagesRef.ObjectNumber)
+			return report, validationErrorOrNil(report.Diagnostics)
+		}
+
+		pages, err := d.Pages()
+		if err != nil {
+			report.Diagnostics = appendValidationError(report.Diagnostics, "PAGES_WALK_FAILED", err.Error(), pagesRef.ObjectNumber)
+			return report, validationErrorOrNil(report.Diagnostics)
+		}
+		if len(pages) == 0 {
+			report.Diagnostics = appendValidationWarn(report.Diagnostics, "PAGES_EMPTY", "page tree resolved but has no leaf pages", pagesRef.ObjectNumber)
+		}
+		for idx, page := range pages {
+			if _, ok := page.Dict[model.Name("Resources")]; !ok {
+				report.Diagnostics = appendValidationWarn(report.Diagnostics, "PAGE_RESOURCES_MISSING", fmt.Sprintf("page %d has no /Resources after inheritance", idx+1), 0)
+			}
+		}
+	}
+
+	if level >= ValidationSemantic {
+		catalog, err := d.Catalog()
+		if err == nil && catalog != nil {
+			if acroFormRef := catalog.AcroFormRef(); acroFormRef != nil {
+				obj, resolveErr := d.Resolve(*acroFormRef)
+				if resolveErr != nil {
+					report.Diagnostics = appendValidationError(report.Diagnostics, "ACROFORM_RESOLVE_FAILED", resolveErr.Error(), acroFormRef.ObjectNumber)
+					return report, validationErrorOrNil(report.Diagnostics)
+				}
+				acroForm, ok := obj.(model.Dict)
+				if !ok {
+					report.Diagnostics = appendValidationError(report.Diagnostics, "ACROFORM_TYPE_INVALID", "AcroForm object must be a dictionary", acroFormRef.ObjectNumber)
+					return report, validationErrorOrNil(report.Diagnostics)
+				}
+				if fields, ok := acroForm[model.Name("Fields")]; ok {
+					if _, ok := fields.(model.Array); !ok {
+						report.Diagnostics = appendValidationError(report.Diagnostics, "ACROFORM_FIELDS_INVALID", "AcroForm /Fields must be an array", acroFormRef.ObjectNumber)
+						return report, validationErrorOrNil(report.Diagnostics)
+					}
+				}
+			}
+		}
+	}
+
+	return report, validationErrorOrNil(report.Diagnostics)
+}
