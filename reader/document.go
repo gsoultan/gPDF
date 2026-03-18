@@ -9,6 +9,7 @@ type Document interface {
 	ContentExtractor
 	ImageExtractor
 	LayoutExtractor
+	CodeGenerator
 	MetadataProvider
 	StructureProvider
 	OutlineProvider

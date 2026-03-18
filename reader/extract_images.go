@@ -2,7 +2,10 @@ package reader
 
 import (
 	"fmt"
+	"math"
 
+	"gpdf/content"
+	contentimpl "gpdf/content/impl"
 	"gpdf/model"
 )
 
@@ -26,44 +29,30 @@ func ExtractImagesPerPage(src contentSource) ([][]ImageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	parser := contentimpl.NewStreamParser()
 	result := make([][]ImageInfo, len(pages))
 	for i, page := range pages {
-		result[i] = extractImagesFromPage(src, page, i)
+		result[i] = extractImagesFromPage(src, parser, page, i)
 	}
 	return result, nil
 }
 
-func extractImagesFromPage(src contentSource, page model.Page, pageIdx int) []ImageInfo {
-	xObjects, ok := page.XObjects()
+func extractImagesFromPage(src contentSource, parser content.Parser, page model.Page, pageIdx int) []ImageInfo {
+	resources, ok := page.Resources()
 	if !ok {
-		// XObjects might be behind a Ref; try resolving /Resources first.
-		res, ok2 := page.Resources()
-		if !ok2 {
-			return nil
-		}
-		xoObj, exists := res[model.Name("XObject")]
-		if !exists {
-			return nil
-		}
-		resolved, err := resolveXObjectDict(src, xoObj)
-		if err != nil || resolved == nil {
-			return nil
-		}
-		xObjects = resolved
+		return nil
 	}
-
-	var images []ImageInfo
-	for name, obj := range xObjects {
-		stream, _, ok := resolveStreamObject(src, obj)
-		if !ok || stream == nil {
-			continue
-		}
-		subtype, _ := stream.Dict[model.Name("Subtype")].(model.Name)
-		if subtype != "Image" {
-			continue
-		}
-		img := imageInfoFromStream(stream, string(name), pageIdx)
-		images = append(images, img)
+	raw, err := pageContentBytes(src, page)
+	if err != nil || len(raw) == 0 {
+		return fallbackImagesFromResources(src, page, pageIdx)
+	}
+	ops, err := parser.Parse(raw)
+	if err != nil {
+		return fallbackImagesFromResources(src, page, pageIdx)
+	}
+	images := extractImagesFromOps(ops, src, parser, resources, pageIdx, identityMatrix(), make(map[model.Ref]struct{}, 4))
+	if len(images) == 0 {
+		return fallbackImagesFromResources(src, page, pageIdx)
 	}
 	return images
 }
@@ -113,9 +102,177 @@ func imageInfoFromStream(s *model.Stream, name string, pageIdx int) ImageInfo {
 			info.Filter = fmt.Sprintf("%v", filters)
 		}
 	}
+	info.Format = detectImageFormat(info.Filter, s.Content)
 
 	info.Data = s.Content
 	return info
+}
+
+func fallbackImagesFromResources(src contentSource, page model.Page, pageIdx int) []ImageInfo {
+	xObjects, ok := page.XObjects()
+	if !ok {
+		res, ok2 := page.Resources()
+		if !ok2 {
+			return nil
+		}
+		xoObj, exists := res[model.Name("XObject")]
+		if !exists {
+			return nil
+		}
+		resolved, err := resolveXObjectDict(src, xoObj)
+		if err != nil || resolved == nil {
+			return nil
+		}
+		xObjects = resolved
+	}
+	var images []ImageInfo
+	for name, obj := range xObjects {
+		stream, _, ok := resolveStreamObject(src, obj)
+		if !ok || stream == nil {
+			continue
+		}
+		subtype, _ := stream.Dict[model.Name("Subtype")].(model.Name)
+		if subtype != "Image" {
+			continue
+		}
+		images = append(images, imageInfoFromStream(stream, string(name), pageIdx))
+	}
+	return images
+}
+
+type imageState struct {
+	ctm   matrix
+	stack []matrix
+}
+
+func newImageState() *imageState {
+	return &imageState{ctm: identityMatrix()}
+}
+
+func extractImagesFromOps(
+	ops []content.Op,
+	src contentSource,
+	parser content.Parser,
+	resources model.Dict,
+	pageIdx int,
+	baseCTM matrix,
+	visited map[model.Ref]struct{},
+) []ImageInfo {
+	state := newImageState()
+	state.ctm = baseCTM
+	var images []ImageInfo
+	for _, op := range ops {
+		switch op.Name {
+		case "q":
+			state.stack = append(state.stack, state.ctm)
+		case "Q":
+			if len(state.stack) == 0 {
+				continue
+			}
+			state.ctm = state.stack[len(state.stack)-1]
+			state.stack = state.stack[:len(state.stack)-1]
+		case "cm":
+			if len(op.Args) >= 6 {
+				state.ctm = state.ctm.multiply(matrixFromObjects(op.Args))
+			}
+		case "Do":
+			images = append(images, extractImagesFromXObject(op.Args, src, parser, resources, pageIdx, state.ctm, visited)...)
+		}
+	}
+	return images
+}
+
+func extractImagesFromXObject(
+	args model.Array,
+	src contentSource,
+	parser content.Parser,
+	resources model.Dict,
+	pageIdx int,
+	ctm matrix,
+	visited map[model.Ref]struct{},
+) []ImageInfo {
+	if len(args) == 0 || resources == nil {
+		return nil
+	}
+	name, ok := args[0].(model.Name)
+	if !ok {
+		return nil
+	}
+	xObjects, ok := resolveDictObject(src, resources[model.Name("XObject")])
+	if !ok {
+		return nil
+	}
+	xObject, ok := xObjects[name]
+	if !ok {
+		return nil
+	}
+	stream, ref, ok := resolveStreamObject(src, xObject)
+	if !ok || stream == nil {
+		return nil
+	}
+	subtype, _ := stream.Dict[model.Name("Subtype")].(model.Name)
+	switch subtype {
+	case "Image":
+		image := imageInfoFromStream(stream, string(name), pageIdx)
+		applyImagePlacement(&image, ctm)
+		return []ImageInfo{image}
+	case "Form":
+		if ref != nil {
+			if _, seen := visited[*ref]; seen {
+				return nil
+			}
+			visited[*ref] = struct{}{}
+			defer delete(visited, *ref)
+		}
+		nestedOps, err := parser.Parse(stream.Content)
+		if err != nil {
+			return nil
+		}
+		nestedResources := resources
+		if formResources, ok := resolveDictObject(src, stream.Dict[model.Name("Resources")]); ok {
+			nestedResources = mergeResourceDict(resources, formResources)
+		}
+		formMatrix := identityMatrix()
+		if formArray, ok := stream.Dict[model.Name("Matrix")].(model.Array); ok {
+			formMatrix = matrixFromObjects(formArray)
+		}
+		return extractImagesFromOps(nestedOps, src, parser, nestedResources, pageIdx, ctm.multiply(formMatrix), visited)
+	}
+	return nil
+}
+
+func matrixFromObjects(args []model.Object) matrix {
+	values := make([]float64, 0, len(args))
+	for _, arg := range args {
+		values = append(values, toFloat64(arg))
+	}
+	return matrixFromArgs(values)
+}
+
+func applyImagePlacement(image *ImageInfo, ctm matrix) {
+	image.X, image.Y = ctm.apply(0, 0)
+	image.WidthPt = math.Hypot(ctm.a, ctm.b)
+	image.HeightPt = math.Hypot(ctm.c, ctm.d)
+	image.Rotation = ctm.rotationDegrees()
+	if image.WidthPt == 0 {
+		image.WidthPt = float64(image.Width)
+	}
+	if image.HeightPt == 0 {
+		image.HeightPt = float64(image.Height)
+	}
+}
+
+func detectImageFormat(filter string, data []byte) string {
+	switch filter {
+	case "DCTDecode":
+		return "jpeg"
+	case "JPXDecode":
+		return "jpeg2000"
+	}
+	if len(data) >= 8 && string(data[:8]) == "\x89PNG\r\n\x1a\n" {
+		return "png"
+	}
+	return ""
 }
 
 // resolveXObjectDict resolves an object to a model.Dict (handles Ref → Dict).

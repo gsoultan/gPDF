@@ -19,11 +19,9 @@ func ExtractLayout(src contentSource) ([]PageLayout, error) {
 	for i, page := range pages {
 		pl := PageLayout{Page: i}
 
-		// Page dimensions from /MediaBox
-		if mb, ok := page.MediaBox(); ok && len(mb) >= 4 {
-			pl.Width = toFloat64(mb[2]) - toFloat64(mb[0])
-			pl.Height = toFloat64(mb[3]) - toFloat64(mb[1])
-		}
+		size := resolvePageSize(page)
+		pl.Width = size.Width
+		pl.Height = size.Height
 
 		raw, err := pageContentBytes(src, page)
 		if err != nil || len(raw) == 0 {

@@ -71,6 +71,58 @@ func TestReadContent_BuiltDocument(t *testing.T) {
 	}
 }
 
+func TestGenerateCode_OpenGenerateClose(t *testing.T) {
+	d, err := doc.New().
+		Title("GenerateCode Test").
+		PageSize(612, 792).
+		AddPage().
+		DrawText("Hello generator", 72, 700, "Helvetica", 12).
+		Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := d.Save(&buf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	_ = d.Close()
+
+	tmp := filepath.Join(t.TempDir(), "generatecode.pdf")
+	if err := os.WriteFile(tmp, buf.Bytes(), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	pdf, err := doc.Open(tmp)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer pdf.Close()
+
+	generated, err := pdf.GenerateCode(doc.CodeGenOptions{
+		PackageName:        "sample",
+		FunctionName:       "BuildPDF",
+		EmbedImages:        true,
+		PreservePageSize:   true,
+		PreserveTextStyles: true,
+		PreservePositions:  true,
+		PreserveTables:     true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	if !strings.Contains(generated.GoSource, "func BuildPDF() *doc.DocumentBuilder") {
+		t.Fatalf("GenerateCode: missing function signature in %q", generated.GoSource)
+	}
+	if !strings.Contains(generated.GoSource, "DrawTextColored") {
+		t.Fatalf("GenerateCode: missing text drawing call in %q", generated.GoSource)
+	}
+	if !strings.Contains(generated.GoSource, "PageSize(612, 792)") {
+		t.Fatalf("GenerateCode: missing page size preservation in %q", generated.GoSource)
+	}
+}
+
 func TestSearch_OpenSearchClose(t *testing.T) {
 	d, err := doc.New().
 		Title("Search Test").

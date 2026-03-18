@@ -12,6 +12,28 @@ func (p Page) MediaBox() (arr Array, ok bool) {
 	return v, ok
 }
 
+// CropBox returns the page crop box as [llx, lly, urx, ury] if present.
+func (p Page) CropBox() (arr Array, ok bool) {
+	v, ok := p.Dict[Name("CropBox")].(Array)
+	return v, ok
+}
+
+// Rotate returns the clockwise page rotation in degrees if present.
+func (p Page) Rotate() (int, bool) {
+	v, ok := p.Dict[Name("Rotate")]
+	if !ok {
+		return 0, false
+	}
+	switch rot := v.(type) {
+	case Integer:
+		return int(rot), true
+	case Real:
+		return int(rot), true
+	default:
+		return 0, false
+	}
+}
+
 // Contents returns the page contents (single Ref or Array of Refs) if present.
 func (p Page) Contents() Object {
 	return p.Dict[Name("Contents")]

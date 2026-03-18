@@ -4,10 +4,16 @@ package reader
 type ImageInfo struct {
 	Name             string
 	Page             int
+	X                float64
+	Y                float64
+	WidthPt          float64
+	HeightPt         float64
+	Rotation         float64
 	Width            int
 	Height           int
 	BitsPerComponent int
 	ColorSpace       string
 	Filter           string
+	Format           string
 	Data             []byte
 }

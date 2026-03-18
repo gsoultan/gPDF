@@ -107,6 +107,11 @@ func (d *Document) ReadLayout() ([]reader.PageLayout, error) {
 	return d.doc.Layout()
 }
 
+// GenerateCode reconstructs the opened PDF into Go builder source.
+func (d *Document) GenerateCode(opts reader.CodeGenOptions) (reader.GeneratedCode, error) {
+	return d.doc.GenerateCode(opts)
+}
+
 // ReadTables detects table-like grids from the page layout and returns them grouped by page.
 func (d *Document) ReadTables() ([][]reader.Table, error) {
 	return d.doc.Tables()

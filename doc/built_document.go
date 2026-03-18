@@ -109,6 +109,10 @@ func (d *builtDocument) ReadLayout() ([]reader.PageLayout, error) {
 	return reader.ExtractLayout(d)
 }
 
+func (d *builtDocument) GenerateCode(opts CodeGenOptions) (GeneratedCode, error) {
+	return reader.GenerateCode(d, opts)
+}
+
 func (d *builtDocument) ReadTables() ([][]reader.Table, error) {
 	layouts, err := reader.ExtractLayout(d)
 	if err != nil {

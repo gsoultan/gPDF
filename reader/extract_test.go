@@ -98,6 +98,48 @@ func TestExtractImages_ReturnsImageMetadata(t *testing.T) {
 	if string(img.Data) != "fakejpegdata" {
 		t.Errorf("Data: got %q, want fakejpegdata", img.Data)
 	}
+	if img.Format != "jpeg" {
+		t.Errorf("Format: got %q, want jpeg", img.Format)
+	}
+}
+
+func TestExtractImages_TracksPlacementFromCTM(t *testing.T) {
+	imgRef := model.Ref{ObjectNumber: 12}
+	contentRef := model.Ref{ObjectNumber: 13}
+
+	src := stubContentSource{
+		pages: []model.Page{
+			makePageWithContent(contentRef, model.Dict{
+				model.Name("XObject"): model.Dict{model.Name("Im0"): imgRef},
+			}),
+		},
+		objects: map[model.Ref]model.Object{
+			contentRef: &model.Stream{Content: []byte("q 120 0 0 80 36 48 cm /Im0 Do Q")},
+			imgRef: &model.Stream{Dict: model.Dict{
+				model.Name("Type"):             model.Name("XObject"),
+				model.Name("Subtype"):          model.Name("Image"),
+				model.Name("Width"):            model.Integer(60),
+				model.Name("Height"):           model.Integer(40),
+				model.Name("BitsPerComponent"): model.Integer(8),
+				model.Name("ColorSpace"):       model.Name("DeviceRGB"),
+			}, Content: []byte("raw")},
+		},
+	}
+
+	images, err := ExtractImages(src)
+	if err != nil {
+		t.Fatalf("ExtractImages error: %v", err)
+	}
+	if len(images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(images))
+	}
+	img := images[0]
+	if img.X != 36 || img.Y != 48 {
+		t.Fatalf("placement: got (%.0f, %.0f), want (36, 48)", img.X, img.Y)
+	}
+	if img.WidthPt != 120 || img.HeightPt != 80 {
+		t.Fatalf("size: got %.0fx%.0f, want 120x80", img.WidthPt, img.HeightPt)
+	}
 }
 
 func TestExtractImages_SkipsFormXObjects(t *testing.T) {
@@ -224,6 +266,33 @@ func TestExtractLayout_CapturesPositionAndStyle(t *testing.T) {
 	}
 	if b.Style.FontSize != 12 {
 		t.Errorf("TextBlock.Style.FontSize: got %.1f, want 12", b.Style.FontSize)
+	}
+}
+
+func TestExtractLayout_UsesCropBoxRotateAndUserUnitForPageSize(t *testing.T) {
+	contentRef := model.Ref{ObjectNumber: 41}
+	src := stubContentSource{
+		pages: []model.Page{{Dict: model.Dict{
+			model.Name("Contents"): contentRef,
+			model.Name("MediaBox"): model.Array{model.Integer(0), model.Integer(0), model.Integer(200), model.Integer(400)},
+			model.Name("CropBox"):  model.Array{model.Integer(0), model.Integer(0), model.Integer(100), model.Integer(300)},
+			model.Name("Rotate"):   model.Integer(90),
+			model.Name("UserUnit"): model.Integer(2),
+		}}},
+		objects: map[model.Ref]model.Object{
+			contentRef: &model.Stream{Content: []byte("BT ET")},
+		},
+	}
+
+	layouts, err := ExtractLayout(src)
+	if err != nil {
+		t.Fatalf("ExtractLayout error: %v", err)
+	}
+	if len(layouts) != 1 {
+		t.Fatalf("expected 1 layout, got %d", len(layouts))
+	}
+	if layouts[0].Width != 600 || layouts[0].Height != 200 {
+		t.Fatalf("page size: got %.0fx%.0f, want 600x200", layouts[0].Width, layouts[0].Height)
 	}
 }
 
