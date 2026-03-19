@@ -51,116 +51,37 @@ func (b *DocumentBuilder) BeginPath(pageIndex int) *PathBuilder {
 
 // DrawLine draws a straight line from (x1, y1) to (x2, y2) on the given page.
 func (b *DocumentBuilder) DrawLine(pageIndex int, x1, y1, x2, y2 float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{
-		{Name: "q"},
-	}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops,
-		content.Op{Name: "m", Args: []model.Object{model.Real(x1), model.Real(y1)}},
-		content.Op{Name: "l", Args: []model.Object{model.Real(x2), model.Real(y2)}},
-		content.Op{Name: "S"},
-		content.Op{Name: "Q"},
-	)
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawLineWithState(pageIndex, x1, y1, x2, y2, style, GraphicsState{})
 }
 
 // DrawRect draws a stroked rectangle at (x, y) with dimensions width × height.
 func (b *DocumentBuilder) DrawRect(pageIndex int, x, y, width, height float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{
-		{Name: "q"},
-	}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops,
-		content.Op{Name: "re", Args: []model.Object{model.Real(x), model.Real(y), model.Real(width), model.Real(height)}},
-		content.Op{Name: "S"},
-		content.Op{Name: "Q"},
-	)
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawRectWithState(pageIndex, x, y, width, height, style, GraphicsState{})
 }
 
 // FillRect draws a filled rectangle at (x, y) with dimensions width × height.
 func (b *DocumentBuilder) FillRect(pageIndex int, x, y, width, height float64, fill Color) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{
-		{Name: "q"},
-	}
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops,
-		content.Op{Name: "re", Args: []model.Object{model.Real(x), model.Real(y), model.Real(width), model.Real(height)}},
-		content.Op{Name: "f"},
-		content.Op{Name: "Q"},
-	)
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillRectWithState(pageIndex, x, y, width, height, fill, GraphicsState{})
 }
 
 // FillStrokeRect draws a filled and stroked rectangle at (x, y) with dimensions width × height.
 func (b *DocumentBuilder) FillStrokeRect(pageIndex int, x, y, width, height float64, fill Color, stroke LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{
-		{Name: "q"},
-	}
-	ops = append(ops, strokeStateOps(stroke)...)
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops,
-		content.Op{Name: "re", Args: []model.Object{model.Real(x), model.Real(y), model.Real(width), model.Real(height)}},
-		content.Op{Name: "B"},
-		content.Op{Name: "Q"},
-	)
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillStrokeRectWithState(pageIndex, x, y, width, height, fill, stroke, GraphicsState{})
 }
 
 // DrawCircle draws a stroked circle centered at (cx, cy) with the given radius.
 func (b *DocumentBuilder) DrawCircle(pageIndex int, cx, cy, radius float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops, circlePathOps(cx, cy, radius)...)
-	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawCircleWithState(pageIndex, cx, cy, radius, style, GraphicsState{})
 }
 
 // FillCircle draws a filled circle centered at (cx, cy) with the given radius.
 func (b *DocumentBuilder) FillCircle(pageIndex int, cx, cy, radius float64, fill Color) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, circlePathOps(cx, cy, radius)...)
-	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillCircleWithState(pageIndex, cx, cy, radius, fill, GraphicsState{})
 }
 
 // FillStrokeCircle draws a filled and stroked circle centered at (cx, cy) with the given radius.
 func (b *DocumentBuilder) FillStrokeCircle(pageIndex int, cx, cy, radius float64, fill Color, stroke LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(stroke)...)
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, circlePathOps(cx, cy, radius)...)
-	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillStrokeCircleWithState(pageIndex, cx, cy, radius, fill, stroke, GraphicsState{})
 }
 
 // DrawLineWithState draws a line with the given graphics state (e.g. opacity/blend mode).
@@ -240,129 +161,145 @@ func (b *DocumentBuilder) FillStrokeCircleWithState(pageIndex int, cx, cy, radiu
 // ── Rounded Rectangle ───────────────────────────────────────────────────────
 
 // DrawRoundedRect strokes a rectangle with rounded corners.
-// radius is the corner radius in points; clamped to min(width,height)/2.
 func (b *DocumentBuilder) DrawRoundedRect(pageIndex int, x, y, width, height, radius float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
-	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawRoundedRectWithState(pageIndex, x, y, width, height, radius, style, GraphicsState{})
 }
 
 // FillRoundedRect fills a rectangle with rounded corners.
 func (b *DocumentBuilder) FillRoundedRect(pageIndex int, x, y, width, height, radius float64, fill Color) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
-	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillRoundedRectWithState(pageIndex, x, y, width, height, radius, fill, GraphicsState{})
 }
 
 // FillStrokeRoundedRect fills and strokes a rectangle with rounded corners.
 func (b *DocumentBuilder) FillStrokeRoundedRect(pageIndex int, x, y, width, height, radius float64, fill Color, stroke LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(stroke)...)
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
-	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillStrokeRoundedRectWithState(pageIndex, x, y, width, height, radius, fill, stroke, GraphicsState{})
+}
+
+// DrawRoundedRectWithState draws a stroked rounded rectangle with graphics state.
+func (b *DocumentBuilder) DrawRoundedRectWithState(pageIndex int, x, y, width, height, radius float64, style LineStyle, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, strokeStateOps(style)...)
+	body = append(body, roundedRectPathOps(x, y, width, height, radius)...)
+	body = append(body, content.Op{Name: "S"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillRoundedRectWithState draws a filled rounded rectangle with graphics state.
+func (b *DocumentBuilder) FillRoundedRectWithState(pageIndex int, x, y, width, height, radius float64, fill Color, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, roundedRectPathOps(x, y, width, height, radius)...)
+	body = append(body, content.Op{Name: "f"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillStrokeRoundedRectWithState draws a filled and stroked rounded rectangle with graphics state.
+func (b *DocumentBuilder) FillStrokeRoundedRectWithState(pageIndex int, x, y, width, height, radius float64, fill Color, stroke LineStyle, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, strokeStateOps(stroke)...)
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, roundedRectPathOps(x, y, width, height, radius)...)
+	body = append(body, content.Op{Name: "B"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
 }
 
 // ── Ellipse ──────────────────────────────────────────────────────────────────
 
 // DrawEllipse strokes an axis-aligned ellipse centered at (cx, cy) with semi-axes rx and ry.
 func (b *DocumentBuilder) DrawEllipse(pageIndex int, cx, cy, rx, ry float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
-	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawEllipseWithState(pageIndex, cx, cy, rx, ry, style, GraphicsState{})
 }
 
 // FillEllipse fills an axis-aligned ellipse centered at (cx, cy) with semi-axes rx and ry.
 func (b *DocumentBuilder) FillEllipse(pageIndex int, cx, cy, rx, ry float64, fill Color) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
-	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillEllipseWithState(pageIndex, cx, cy, rx, ry, fill, GraphicsState{})
 }
 
 // FillStrokeEllipse fills and strokes an axis-aligned ellipse centered at (cx, cy) with semi-axes rx and ry.
 func (b *DocumentBuilder) FillStrokeEllipse(pageIndex int, cx, cy, rx, ry float64, fill Color, stroke LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(stroke)...)
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
-	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillStrokeEllipseWithState(pageIndex, cx, cy, rx, ry, fill, stroke, GraphicsState{})
+}
+
+// DrawEllipseWithState draws a stroked ellipse with graphics state.
+func (b *DocumentBuilder) DrawEllipseWithState(pageIndex int, cx, cy, rx, ry float64, style LineStyle, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, strokeStateOps(style)...)
+	body = append(body, ellipsePathOps(cx, cy, rx, ry)...)
+	body = append(body, content.Op{Name: "S"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillEllipseWithState draws a filled ellipse with graphics state.
+func (b *DocumentBuilder) FillEllipseWithState(pageIndex int, cx, cy, rx, ry float64, fill Color, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, ellipsePathOps(cx, cy, rx, ry)...)
+	body = append(body, content.Op{Name: "f"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillStrokeEllipseWithState draws a filled and stroked ellipse with graphics state.
+func (b *DocumentBuilder) FillStrokeEllipseWithState(pageIndex int, cx, cy, rx, ry float64, fill Color, stroke LineStyle, state GraphicsState) *DocumentBuilder {
+	var body []content.Op
+	body = append(body, strokeStateOps(stroke)...)
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, ellipsePathOps(cx, cy, rx, ry)...)
+	body = append(body, content.Op{Name: "B"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
 }
 
 // ── Polygon ───────────────────────────────────────────────────────────────────
 
 // DrawPolygon strokes a closed polygon defined by a list of (x,y) point pairs.
-// points must have an even number of elements: [x0,y0, x1,y1, ...].
 func (b *DocumentBuilder) DrawPolygon(pageIndex int, points []float64, style LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) || len(points) < 4 || len(points)%2 != 0 {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(style)...)
-	ops = append(ops, polygonPathOps(points)...)
-	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.DrawPolygonWithState(pageIndex, points, style, GraphicsState{})
 }
 
 // FillPolygon fills a closed polygon defined by a list of (x,y) point pairs.
 func (b *DocumentBuilder) FillPolygon(pageIndex int, points []float64, fill Color) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) || len(points) < 4 || len(points)%2 != 0 {
-		return b
-	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, polygonPathOps(points)...)
-	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	return b.FillPolygonWithState(pageIndex, points, fill, GraphicsState{})
 }
 
 // FillStrokePolygon fills and strokes a closed polygon defined by a list of (x,y) point pairs.
 func (b *DocumentBuilder) FillStrokePolygon(pageIndex int, points []float64, fill Color, stroke LineStyle) *DocumentBuilder {
-	if !b.pc.validPageIndex(pageIndex) || len(points) < 4 || len(points)%2 != 0 {
+	return b.FillStrokePolygonWithState(pageIndex, points, fill, stroke, GraphicsState{})
+}
+
+// DrawPolygonWithState draws a stroked polygon with graphics state.
+func (b *DocumentBuilder) DrawPolygonWithState(pageIndex int, points []float64, style LineStyle, state GraphicsState) *DocumentBuilder {
+	if len(points) < 4 || len(points)%2 != 0 {
 		return b
 	}
-	ops := []content.Op{{Name: "q"}}
-	ops = append(ops, strokeStateOps(stroke)...)
-	ops = append(ops, fillColorOps(fill)...)
-	ops = append(ops, polygonPathOps(points)...)
-	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	b.pc.pages[pageIndex].GraphicRuns = append(b.pc.pages[pageIndex].GraphicRuns, graphicRun{Ops: ops})
-	return b
+	var body []content.Op
+	body = append(body, strokeStateOps(style)...)
+	body = append(body, polygonPathOps(points)...)
+	body = append(body, content.Op{Name: "S"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillPolygonWithState draws a filled polygon with graphics state.
+func (b *DocumentBuilder) FillPolygonWithState(pageIndex int, points []float64, fill Color, state GraphicsState) *DocumentBuilder {
+	if len(points) < 4 || len(points)%2 != 0 {
+		return b
+	}
+	var body []content.Op
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, polygonPathOps(points)...)
+	body = append(body, content.Op{Name: "f"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
+}
+
+// FillStrokePolygonWithState draws a filled and stroked polygon with graphics state.
+func (b *DocumentBuilder) FillStrokePolygonWithState(pageIndex int, points []float64, fill Color, stroke LineStyle, state GraphicsState) *DocumentBuilder {
+	if len(points) < 4 || len(points)%2 != 0 {
+		return b
+	}
+	var body []content.Op
+	body = append(body, strokeStateOps(stroke)...)
+	body = append(body, fillColorOps(fill)...)
+	body = append(body, polygonPathOps(points)...)
+	body = append(body, content.Op{Name: "B"})
+	return b.addGraphicRunWithState(pageIndex, state, body)
 }
 
 // circleControlFactor is 4*(sqrt(2)-1)/3, the Bézier control-point offset for a quarter circle.

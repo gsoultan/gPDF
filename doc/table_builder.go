@@ -823,12 +823,6 @@ func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, f
 	return allLines
 }
 
-// measureTableCellHeight returns an approximate height for the given cell content.
-func measureTableCellHeight(b *DocumentBuilder, cell TableCellSpec, cellWidth float64) float64 {
-	tb := &TableBuilder{builder: b}
-	return tb.measureCell(cell, cellWidth).totalHeight
-}
-
 func computeImageDimensions(img *TableCellImageSpec, cellWidth, rowHeight, leftPad, rightPad, topPad, bottomPad float64) (w, h float64) {
 	w, h = img.WidthPt, img.HeightPt
 	if w > 0 && h > 0 {

@@ -9,20 +9,10 @@ import (
 	"gpdf/model"
 	"gpdf/security"
 	"gpdf/stream"
-	"gpdf/stream/asciihex"
-	"gpdf/stream/ccitt"
-	"gpdf/stream/crypt"
-	"gpdf/stream/dct"
-	"gpdf/stream/flate"
-	"gpdf/stream/jbig2"
-	"gpdf/stream/jpx"
-	"gpdf/stream/runlength"
+	"gpdf/stream/defaults"
 	"gpdf/syntax"
 	"gpdf/syntax/impl"
 	"gpdf/xref"
-
-	ascii85filter "gpdf/stream/ascii85"
-	lzwfilter "gpdf/stream/lzw"
 )
 
 var (
@@ -45,18 +35,7 @@ func NewPDFReader() *PDFReader {
 
 // NewPDFReaderWithOptions returns a PDF reader with default stream filters and custom options.
 func NewPDFReaderWithOptions(options ReaderOptions) *PDFReader {
-	reg := stream.NewRegistry()
-	reg.Register("FlateDecode", flate.NewFilter())
-	reg.Register("DCTDecode", dct.NewFilter())
-	reg.Register("LZWDecode", lzwfilter.NewFilter())
-	reg.Register("ASCII85Decode", ascii85filter.NewFilter())
-	reg.Register("ASCIIHexDecode", asciihex.NewFilter())
-	reg.Register("JPXDecode", jpx.NewFilter())
-	reg.Register("JBIG2Decode", jbig2.NewFilter())
-	reg.Register("CCITTFaxDecode", ccitt.NewFilter())
-	reg.Register("RunLengthDecode", runlength.NewFilter())
-	reg.Register("Crypt", crypt.NewFilter())
-	return &PDFReader{filters: reg, options: normalizeReaderOptions(options)}
+	return &PDFReader{filters: defaults.NewStandardRegistry(), options: normalizeReaderOptions(options)}
 }
 
 // NewPDFReaderWithFilters returns a PDF reader using the given filter registry.

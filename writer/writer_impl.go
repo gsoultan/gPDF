@@ -10,12 +10,7 @@ import (
 	"gpdf/model"
 	"gpdf/security"
 	"gpdf/stream"
-	"gpdf/stream/asciihex"
-	"gpdf/stream/dct"
-	"gpdf/stream/flate"
-
-	ascii85filter "gpdf/stream/ascii85"
-	lzwfilter "gpdf/stream/lzw"
+	"gpdf/stream/defaults"
 )
 
 // PDFWriter implements Writer for PDF 2.0 output.
@@ -27,13 +22,7 @@ type PDFWriter struct {
 
 // NewPDFWriter returns a PDF writer with default stream filters registered.
 func NewPDFWriter() *PDFWriter {
-	reg := stream.NewRegistry()
-	reg.Register("FlateDecode", flate.NewFilter())
-	reg.Register("DCTDecode", dct.NewFilter())
-	reg.Register("LZWDecode", lzwfilter.NewFilter())
-	reg.Register("ASCII85Decode", ascii85filter.NewFilter())
-	reg.Register("ASCIIHexDecode", asciihex.NewFilter())
-	return NewPDFWriterWithOptions(WriterOptions{Filters: reg})
+	return NewPDFWriterWithOptions(WriterOptions{Filters: defaults.NewStandardRegistry()})
 }
 
 // NewPDFWriterWithFilters returns a PDF writer using the given filter registry.
@@ -46,12 +35,7 @@ func NewPDFWriterWithOptions(options WriterOptions) *PDFWriter {
 	opts := normalizeWriterOptions(options)
 	filters := opts.Filters
 	if filters == nil {
-		filters = stream.NewRegistry()
-		filters.Register("FlateDecode", flate.NewFilter())
-		filters.Register("DCTDecode", dct.NewFilter())
-		filters.Register("LZWDecode", lzwfilter.NewFilter())
-		filters.Register("ASCII85Decode", ascii85filter.NewFilter())
-		filters.Register("ASCIIHexDecode", asciihex.NewFilter())
+		filters = defaults.NewStandardRegistry()
 	}
 	return &PDFWriter{
 		filters:       filters,

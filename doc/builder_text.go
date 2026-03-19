@@ -315,13 +315,13 @@ func (b *DocumentBuilder) DrawRichText(pageIndex int, rt *RichText, x, y float64
 // DrawText queues text to be drawn on the last added page at (x, y) using the given font and size.
 // FontName should be a standard PDF base font (e.g. Helvetica, Times-Roman). Call after AddPage().
 func (b *DocumentBuilder) DrawText(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, ColorBlack, 0)
+	return b.DrawTextColored(textStr, x, y, fontName, fontSize, ColorBlack)
 }
 
 // DrawTextColored queues text drawn in the specified RGB color on the last added page.
 // It behaves like DrawText but sets the fill color for that run.
 func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, color, 0)
+	return b.drawTextColoredAt(b.lastPageIndex(), textStr, x, y, fontName, fontSize, color, 0)
 }
 
 func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing float64) *DocumentBuilder {
@@ -360,14 +360,8 @@ func (b *DocumentBuilder) DrawTextCenteredColored(textStr string, cx, y float64,
 	if len(b.pc.pages) == 0 {
 		return b
 	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
 	w := b.textWidthStyle(textStr, fontSize, fontName, letterSpacing, 0)
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, cx-w/2, y, fontName, fontSize, color, letterSpacing)
+	return b.drawTextColoredAt(b.lastPageIndex(), textStr, cx-w/2, y, fontName, fontSize, color, letterSpacing)
 }
 
 // DrawTextRight draws text right-aligned so that its right edge is at x.
@@ -380,14 +374,8 @@ func (b *DocumentBuilder) DrawTextRightColored(textStr string, x, y float64, fon
 	if len(b.pc.pages) == 0 {
 		return b
 	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
 	w := b.textWidthStyle(textStr, fontSize, fontName, letterSpacing, 0)
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x-w, y, fontName, fontSize, color, letterSpacing)
+	return b.drawTextColoredAt(b.lastPageIndex(), textStr, x-w, y, fontName, fontSize, color, letterSpacing)
 }
 
 // DrawTextWithUnderline draws text with an underline on the last added page.
@@ -395,13 +383,7 @@ func (b *DocumentBuilder) DrawTextWithUnderline(textStr string, x, y float64, fo
 	if len(b.pc.pages) == 0 {
 		return b
 	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
-	idx := len(b.pc.pages) - 1
+	idx := b.lastPageIndex()
 	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB: [3]float64{color.R, color.G, color.B},
@@ -415,13 +397,7 @@ func (b *DocumentBuilder) DrawTextWithStrikethrough(textStr string, x, y float64
 	if len(b.pc.pages) == 0 {
 		return b
 	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
-	idx := len(b.pc.pages) - 1
+	idx := b.lastPageIndex()
 	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB:  [3]float64{color.R, color.G, color.B},
