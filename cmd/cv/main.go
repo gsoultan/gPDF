@@ -19,6 +19,7 @@ import (
 	"os"
 
 	"gpdf/doc"
+	"gpdf/doc/style"
 )
 
 func main() {
@@ -52,152 +53,168 @@ func main() {
 		Subject("CV / Resume").
 		Creator("gPDF").
 		SetLanguage("id-ID").
-		PageSize(pageW, pageH)
-	b.AddPage()
+		PageSize(pageW, pageH).
+		AddPage()
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SIDEBAR — black background
 	// ═══════════════════════════════════════════════════════════════════════
-	b = b.FillRect(0, 0, 0, sidebarW, pageH, black)
+	b.FillRect(0, 0, 0, sidebarW, pageH, black)
+
+	sidebarFlow := b.Flow(doc.FlowOptions{
+		Left:  sidebarPadX,
+		Right: pageW - (sidebarW - sidebarPadX),
+		Top:   pageH - 800,
+	})
+
+	// ── Profile Picture ──────────────────────────────────────────────────────
+	img := image.NewRGBA(image.Rect(0, 0, 200, 200))
+	for y := 0; y < 200; y++ {
+		for x := 0; x < 200; x++ {
+			img.Set(x, y, color.RGBA{100, 100, 100, 255})
+		}
+	}
+	var buf bytes.Buffer
+	jpeg.Encode(&buf, img, nil)
+	sidebarFlow.ImageWithLayout(buf.Bytes(), style.ImageLayout{
+		Width: 60, Height: 60, Align: style.ImageAlignCenter, Margin: 10,
+	}, style.ImageStyle{ClipCircle: true, ClipCX: 30, ClipCY: 30, ClipR: 30})
 
 	// ── Name ────────────────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("PEDRO", sidebarPadX, 800, "Helvetica-Bold", 20, white).
-		DrawTextColored("FERNANDES", sidebarPadX, 776, "Helvetica-Bold", 20, white).
-		DrawTextColored("Lulusan Baru", sidebarPadX, 754, "Helvetica-Oblique", 10, lightGray)
-
-	// ── Divider ──────────────────────────────────────────────────────────────
-	b = b.DrawLine(0, sidebarPadX, 741, sidebarW-sidebarPadX, 741,
-		doc.LineStyle{Width: 0.5, Color: lightGray})
+	sidebarFlow.
+		Color(white).Font("Helvetica-Bold").Size(20).
+		Paragraph("PEDRO").
+		Paragraph("FERNANDES").
+		Size(10).Font("Helvetica-Oblique").Color(lightGray).
+		Paragraph("Lulusan Baru").
+		Space(5).
+		Line(0.5, lightGray).
+		Space(10)
 
 	// ── DATA DIRI section ────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("DATA DIRI", sidebarPadX, 726, "Helvetica-Bold", 9, white).
-		DrawTextColored("Tempat / Tanggal Lahir", sidebarPadX, 708, "Helvetica", 8, lightGray).
-		DrawTextColored("St., Any City, 12 Juli 1996", sidebarPadX, 695, "Helvetica", 9, white).
-		DrawTextColored("Jenis Kelamin", sidebarPadX, 677, "Helvetica", 8, lightGray).
-		DrawTextColored("Laki-Laki", sidebarPadX, 664, "Helvetica", 9, white).
-		DrawTextColored("Status", sidebarPadX, 646, "Helvetica", 8, lightGray).
-		DrawTextColored("Belum menikah", sidebarPadX, 633, "Helvetica", 9, white).
-		DrawTextColored("Kewarganegaraan", sidebarPadX, 615, "Helvetica", 8, lightGray).
-		DrawTextColored("Indonesia", sidebarPadX, 602, "Helvetica", 9, white)
-
-	// ── Divider ──────────────────────────────────────────────────────────────
-	b = b.DrawLine(0, sidebarPadX, 589, sidebarW-sidebarPadX, 589,
-		doc.LineStyle{Width: 0.5, Color: lightGray})
+	sidebarFlow.
+		Size(9).Font("Helvetica-Bold").Color(white).Paragraph("DATA DIRI").
+		Space(5).
+		Size(8).Font("Helvetica").Color(lightGray).
+		Paragraph("Tempat / Tanggal Lahir").
+		Size(9).Color(white).Paragraph("St., Any City, 12 Juli 1996").
+		Space(3).
+		Size(8).Color(lightGray).Paragraph("Jenis Kelamin").
+		Size(9).Color(white).Paragraph("Laki-Laki").
+		Space(3).
+		Size(8).Color(lightGray).Paragraph("Status").
+		Size(9).Color(white).Paragraph("Belum menikah").
+		Space(3).
+		Size(8).Color(lightGray).Paragraph("Kewarganegaraan").
+		Size(9).Color(white).Paragraph("Indonesia").
+		Space(10).
+		Line(0.5, lightGray).
+		Space(10)
 
 	// ── KONTAK section ───────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("KONTAK", sidebarPadX, 574, "Helvetica-Bold", 9, white).
-		DrawTextColored("+123-456-7890", sidebarPadX, 558, "Helvetica", 9, white).
-		DrawTextColored("hello@reallygreatsite.com", sidebarPadX, 543, "Helvetica", 8, white).
-		DrawTextColored("123 Anywhere St., Any City", sidebarPadX, 528, "Helvetica", 9, white)
-
-	// ── Divider ──────────────────────────────────────────────────────────────
-	b = b.DrawLine(0, sidebarPadX, 515, sidebarW-sidebarPadX, 515,
-		doc.LineStyle{Width: 0.5, Color: lightGray})
+	sidebarFlow.
+		Size(9).Font("Helvetica-Bold").Color(white).Paragraph("KONTAK").
+		Space(5).
+		Size(9).Font("Helvetica").Paragraph("+123-456-7890").
+		Size(8).Paragraph("hello@reallygreatsite.com").
+		Size(9).Paragraph("123 Anywhere St., Any City").
+		Space(10).
+		Line(0.5, lightGray).
+		Space(10)
 
 	// ── SOSIAL MEDIA section ─────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("SOSIAL MEDIA", sidebarPadX, 500, "Helvetica-Bold", 9, white).
-		DrawTextColored("@reallygreatsite", sidebarPadX, 484, "Helvetica", 9, white)
+	sidebarFlow.
+		Size(9).Font("Helvetica-Bold").Paragraph("SOSIAL MEDIA").
+		Space(5).
+		Size(9).Font("Helvetica").Paragraph("@reallygreatsite")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// RIGHT CONTENT AREA
 	// ═══════════════════════════════════════════════════════════════════════
 
+	contentFlow := b.Flow(doc.FlowOptions{
+		Left:  contentX,
+		Right: pageW - (contentX + contentW),
+		Top:   pageH - 800,
+	})
+
 	// ── TENTANG SAYA ─────────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("TENTANG SAYA", contentPadX, 800, "Helvetica-Bold", 13, darkText)
-	b = b.DrawLine(0, contentPadX, 784, contentPadX+contentW, 784,
-		doc.LineStyle{Width: 1.0, Color: black})
-	b = b.DrawTextBoxColored(0,
-		"Saya merupakan seorang profesional dalam bidang arsitektur, dan "+
-			"telah berpengalaman lebih dari 2 tahun dalam pembangunan infrastruktur. "+
-			"Memiliki jiwa pemimpin serta mampu bekerja dalam tim.",
-		contentPadX, 769, "Helvetica", 10,
-		doc.TextLayoutOptions{Width: contentW, LineHeight: 14},
-		darkText,
-	)
+	contentFlow.
+		Color(darkText).Font("Helvetica-Bold").Size(13).
+		Paragraph("TENTANG SAYA").
+		Line(1.0, black).
+		Space(5).
+		Font("Helvetica").Size(10).
+		Paragraph("Saya merupakan seorang profesional dalam bidang arsitektur, dan " +
+			"telah berpengalaman lebih dari 2 tahun dalam pembangunan infrastruktur. " +
+			"Memiliki jiwa pemimpin serta mampu bekerja dalam tim.").
+		Space(20)
 
 	// ── PENDIDIKAN ───────────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("PENDIDIKAN", contentPadX, 710, "Helvetica-Bold", 13, darkText)
-	b = b.DrawLine(0, contentPadX, 694, contentPadX+contentW, 694,
-		doc.LineStyle{Width: 1.0, Color: black})
+	contentFlow.
+		Font("Helvetica-Bold").Size(13).
+		Paragraph("PENDIDIKAN").
+		Line(1.0, black).
+		Space(10)
 
-	type eduEntry struct {
+	education := []struct {
 		school string
 		period string
-		y      float64
-	}
-	education := []eduEntry{
-		{"S1 Arsitektur Universitas Fauget", "2019-2022", 679},
-		{"SMA Negeri 1 Fauget", "2016-2019", 659},
-		{"SMP Negeri 1 Fauget", "2013-2016", 639},
-		{"SD Negeri 1 Fauget", "2008-2013", 619},
+	}{
+		{"S1 Arsitektur Universitas Fauget", "2019-2022"},
+		{"SMA Negeri 1 Fauget", "2016-2019"},
+		{"SMP Negeri 1 Fauget", "2013-2016"},
+		{"SD Negeri 1 Fauget", "2008-2013"},
 	}
 	for _, e := range education {
-		b = b.
-			DrawTextColored(e.school, contentPadX, e.y, "Helvetica-Bold", 10, darkText).
-			DrawTextColored(e.period, contentPadX, e.y-13, "Helvetica", 9, doc.ColorGray)
+		contentFlow.
+			Font("Helvetica-Bold").Size(10).Paragraph(e.school).
+			Font("Helvetica").Size(9).Color(doc.ColorGray).Paragraph(e.period).
+			Color(darkText).Space(5)
 	}
+	contentFlow.Space(15)
 
 	// ── PENGALAMAN KERJA ─────────────────────────────────────────────────────
-	b = b.
-		DrawTextColored("PENGALAMAN KERJA", contentPadX, 578, "Helvetica-Bold", 13, darkText)
-	b = b.DrawLine(0, contentPadX, 562, contentPadX+contentW, 562,
-		doc.LineStyle{Width: 1.0, Color: black})
+	contentFlow.
+		Font("Helvetica-Bold").Size(13).
+		Paragraph("PENGALAMAN KERJA").
+		Line(1.0, black).
+		Space(10)
 
 	// PT Borcelle
-	b = b.
-		DrawTextColored("PT Borcelle", contentPadX, 547, "Helvetica-Bold", 10, darkText)
-	ptBorcelleItems := []string{
-		"Menganalisis data dan memantau kinerja di lapangan",
-		"Merancang pembuatan rencana anggaran belanja",
-		"Memimpin pelaksanaan pembangunan",
-	}
-	y := 530.0
-	for _, item := range ptBorcelleItems {
-		b = b.
-			DrawTextColored("-", contentPadX, y, "Helvetica", 9, darkText).
-			DrawTextColored(item, contentPadX+10, y, "Helvetica", 9, darkText)
-		y -= 14
-	}
+	contentFlow.
+		Font("Helvetica-Bold").Size(10).Paragraph("PT Borcelle").
+		Space(5).
+		Font("Helvetica").Size(9).
+		List([]string{
+			"Menganalisis data dan memantau kinerja di lapangan",
+			"Merancang pembuatan rencana anggaran belanja",
+			"Memimpin pelaksanaan pembangunan",
+		}, false).
+		Space(10)
 
 	// PT Fauget
-	b = b.
-		DrawTextColored("PT Fauget", contentPadX, y-4, "Helvetica-Bold", 10, darkText)
-	y -= 20
-	ptFaugetItems := []string{
-		"Membangun dan merancang gambar gudang penyimpanan",
-		"Merancang pembuatan rencana anggaran belanja",
-	}
-	for _, item := range ptFaugetItems {
-		b = b.
-			DrawTextColored("-", contentPadX, y, "Helvetica", 9, darkText).
-			DrawTextColored(item, contentPadX+10, y, "Helvetica", 9, darkText)
-		y -= 14
-	}
+	contentFlow.
+		Font("Helvetica-Bold").Size(10).Paragraph("PT Fauget").
+		Space(5).
+		Font("Helvetica").Size(9).
+		List([]string{
+			"Membangun dan merancang gambar gudang penyimpanan",
+			"Merancang pembuatan rencana anggaran belanja",
+		}, false).
+		Space(20)
 
 	// ── KEMAMPUAN ─────────────────────────────────────────────────────────────
-	kemampuanY := y - 20
-	b = b.
-		DrawTextColored("KEMAMPUAN", contentPadX, kemampuanY, "Helvetica-Bold", 13, darkText)
-	b = b.DrawLine(0, contentPadX, kemampuanY-16, contentPadX+contentW, kemampuanY-16,
-		doc.LineStyle{Width: 1.0, Color: black})
-
-	skills := []string{
-		"Aktif berbahasa Indonesia dan Inggris",
-		"Mampu menggunakan software desain",
-	}
-	skillY := kemampuanY - 31
-	for _, skill := range skills {
-		b = b.
-			DrawTextColored("-", contentPadX, skillY, "Helvetica", 9, darkText).
-			DrawTextColored(skill, contentPadX+10, skillY, "Helvetica", 9, darkText)
-		skillY -= 14
-	}
+	contentFlow.
+		Font("Helvetica-Bold").Size(13).
+		Paragraph("KEMAMPUAN").
+		Line(1.0, black).
+		Space(10).
+		Font("Helvetica").Size(9).
+		List([]string{
+			"Aktif berbahasa Indonesia dan Inggris",
+			"Mampu menggunakan software desain",
+		}, false)
 
 	// ── Profile photo (circular placeholder) ────────────────────────────────
 	// The original CV has a circular photo in the upper sidebar.
@@ -214,7 +231,7 @@ func main() {
 	)
 	// Build a small gray JPEG placeholder (will be replaced with a real photo).
 	const photoRes = 64
-	img := image.NewRGBA(image.Rect(0, 0, photoRes, photoRes))
+	img = image.NewRGBA(image.Rect(0, 0, photoRes, photoRes))
 	grayVal := color.RGBA{R: 80, G: 80, B: 80, A: 255}
 	for py := range photoRes {
 		for px := range photoRes {

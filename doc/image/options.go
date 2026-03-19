@@ -18,4 +18,5 @@ type Options struct {
 	ClipCircle       bool
 	ClipCX, ClipCY   float64
 	ClipRadius       float64
+	IsArtifact       bool
 }

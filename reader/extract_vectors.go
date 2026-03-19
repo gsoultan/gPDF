@@ -13,6 +13,7 @@ type vectorExtractor struct {
 	ctmStack    []matrix
 	strokeColor ColorRGB
 	fillColor   ColorRGB
+	lineWidth   float64
 	pathLines   []vectorLine
 	pathRects   []vectorRect
 	currentX    float64
@@ -91,6 +92,10 @@ func (v *vectorExtractor) extract(src contentSource, parser content.Parser, ops 
 			v.strokeColor = colorFromArgs(op.Args)
 		case "rg":
 			v.fillColor = colorFromArgs(op.Args)
+		case "w":
+			if len(op.Args) >= 1 {
+				v.lineWidth = toFloat64(op.Args[0])
+			}
 		case "m":
 			if len(op.Args) < 2 {
 				continue
@@ -175,6 +180,7 @@ func (v *vectorExtractor) walkFormXObject(src contentSource, parser content.Pars
 		ctm:         v.ctm,
 		strokeColor: v.strokeColor,
 		fillColor:   v.fillColor,
+		lineWidth:   v.lineWidth,
 	}
 	if matrixArray, ok := stream.Dict[model.Name("Matrix")].(model.Array); ok && len(matrixArray) >= 6 {
 		args := []float64{toFloat64(matrixArray[0]), toFloat64(matrixArray[1]), toFloat64(matrixArray[2]), toFloat64(matrixArray[3]), toFloat64(matrixArray[4]), toFloat64(matrixArray[5])}
@@ -191,6 +197,7 @@ func colorFromArgs(args []model.Object) ColorRGB {
 }
 
 func (v *vectorExtractor) flushPath(stroke bool, fill bool) {
+	effectiveWidth := max(0.5, v.lineWidth*v.ctm.scaling())
 	for _, line := range v.pathLines {
 		x1, y1 := v.ctm.apply(line.x1, line.y1)
 		x2, y2 := v.ctm.apply(line.x2, line.y2)
@@ -200,6 +207,7 @@ func (v *vectorExtractor) flushPath(stroke bool, fill bool) {
 			Y1:          y1,
 			X2:          x2,
 			Y2:          y2,
+			LineWidth:   effectiveWidth,
 			Stroke:      stroke,
 			Fill:        fill,
 			StrokeColor: v.strokeColor,
@@ -215,6 +223,7 @@ func (v *vectorExtractor) flushPath(stroke bool, fill bool) {
 			Y1:          min(y1, y2),
 			X2:          max(x1, x2),
 			Y2:          max(y1, y2),
+			LineWidth:   effectiveWidth,
 			Stroke:      stroke,
 			Fill:        fill,
 			StrokeColor: v.strokeColor,

@@ -142,12 +142,13 @@ func fallbackImagesFromResources(src contentSource, page model.Page, pageIdx int
 }
 
 type imageState struct {
-	ctm   matrix
-	stack []matrix
+	ctm     matrix
+	opacity float64
+	stack   []imageState
 }
 
 func newImageState() *imageState {
-	return &imageState{ctm: identityMatrix()}
+	return &imageState{ctm: identityMatrix(), opacity: 1.0}
 }
 
 func extractImagesFromOps(
@@ -166,19 +167,44 @@ func extractImagesFromOps(
 	for _, op := range ops {
 		switch op.Name {
 		case "q":
-			state.stack = append(state.stack, state.ctm)
+			state.stack = append(state.stack, *state)
 		case "Q":
 			if len(state.stack) == 0 {
 				continue
 			}
-			state.ctm = state.stack[len(state.stack)-1]
+			saved := state.stack[len(state.stack)-1]
+			state.ctm = saved.ctm
+			state.opacity = saved.opacity
 			state.stack = state.stack[:len(state.stack)-1]
 		case "cm":
 			if len(op.Args) >= 6 {
 				state.ctm = state.ctm.multiply(matrixFromObjects(op.Args))
 			}
+		case "gs":
+			if len(op.Args) > 0 {
+				if name, ok := op.Args[0].(model.Name); ok {
+					if extGState, ok := resolveDictObject(src, resources[model.Name("ExtGState")]); ok {
+						if gs, ok := resolveDictObject(src, extGState[name]); ok {
+							if ca, ok := gs[model.Name("ca")].(model.Real); ok {
+								state.opacity = float64(ca)
+							} else if ca, ok := gs[model.Name("ca")].(model.Integer); ok {
+								state.opacity = float64(ca)
+							}
+							if CA, ok := gs[model.Name("CA")].(model.Real); ok {
+								state.opacity = float64(CA)
+							} else if CA, ok := gs[model.Name("CA")].(model.Integer); ok {
+								state.opacity = float64(CA)
+							}
+						}
+					}
+				}
+			}
 		case "Do":
-			images = append(images, extractImagesFromXObject(op.Args, src, parser, resources, pageIdx, state.ctm, visited, maxImageBytes)...)
+			extracted := extractImagesFromXObject(op.Args, src, parser, resources, pageIdx, state.ctm, visited, maxImageBytes)
+			for i := range extracted {
+				extracted[i].Opacity = state.opacity
+			}
+			images = append(images, extracted...)
 		}
 	}
 	return images

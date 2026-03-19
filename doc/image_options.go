@@ -40,6 +40,7 @@ func (b *DocumentBuilder) DrawImageWith(opts ImageOptions) *DocumentBuilder {
 		BitsPerComponent: bpc, ColorSpace: colorSpace,
 		IsJPEG: opts.IsJPEG, Opacity: opts.Opacity, RotateDeg: opts.RotateDeg,
 		ClipCircle: opts.ClipCircle, ClipCX: opts.ClipCX, ClipCY: opts.ClipCY, ClipR: opts.ClipRadius,
+		IsArtifact: opts.IsArtifact,
 	}
 	b.pc.pages[pageIndex].ImageRuns = append(b.pc.pages[pageIndex].ImageRuns, run)
 	return b

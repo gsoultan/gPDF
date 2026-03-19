@@ -20,8 +20,18 @@ func WrapLines(text string, fontSize, width float64, widthFn FontWidthFunc) []st
 // LineWidthFunc returns the available width for the given line index.
 type LineWidthFunc func(lineIdx int) float64
 
+// LineRectFunc returns the X offset and available width for the given line index.
+type LineRectFunc func(lineIdx int) (xOffset, width float64)
+
 // WrapLinesDynamic splits text into lines using a potentially different width for each line.
 func WrapLinesDynamic(text string, fontSize float64, widthFn FontWidthFunc, lineWidthFn LineWidthFunc) []string {
+	return WrapLinesRect(text, fontSize, widthFn, func(lineIdx int) (float64, float64) {
+		return 0, lineWidthFn(lineIdx)
+	})
+}
+
+// WrapLinesRect splits text into lines using a potentially different X offset and width for each line.
+func WrapLinesRect(text string, fontSize float64, widthFn FontWidthFunc, lineRectFn LineRectFunc) []string {
 	var lines []string
 	spaceWidth := widthFn(" ", fontSize)
 	currentLineIdx := 0
@@ -40,7 +50,7 @@ func WrapLinesDynamic(text string, fontSize float64, widthFn FontWidthFunc, line
 
 		for w := range strings.FieldsSeq(para) {
 			wordWidth := widthFn(w, fontSize)
-			targetWidth := lineWidthFn(currentLineIdx)
+			_, targetWidth := lineRectFn(currentLineIdx)
 			if targetWidth <= 0 {
 				targetWidth = 0.1 // avoid zero or negative widths
 			}

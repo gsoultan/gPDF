@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"gpdf/doc"
-	"gpdf/doc/table"
+	"gpdf/doc/style"
 )
 
 func createTestImage(w, h int) []byte {
@@ -45,8 +45,8 @@ func TestTableImageWrapping(t *testing.T) {
 		Image: &doc.TableCellImageSpec{
 			Raw:     logoData,
 			WidthPt: 50, HeightPt: 50,
-			Wrap:      table.ImageWrapSquare,
-			Side:      table.ImageSideLeft,
+			Wrap:      style.ImageWrapSquare,
+			Side:      style.ImageSideLeft,
 			PaddingPt: 10,
 		},
 		Style: doc.CellStyle{FillColor: doc.ColorLightGray, HasFillColor: true},
@@ -58,8 +58,8 @@ func TestTableImageWrapping(t *testing.T) {
 		Image: &doc.TableCellImageSpec{
 			Raw:     logoData,
 			WidthPt: 50, HeightPt: 50,
-			Wrap:      table.ImageWrapSquare,
-			Side:      table.ImageSideRight,
+			Wrap:      style.ImageWrapSquare,
+			Side:      style.ImageSideRight,
 			PaddingPt: 10,
 		},
 	})
@@ -70,7 +70,7 @@ func TestTableImageWrapping(t *testing.T) {
 		Image: &doc.TableCellImageSpec{
 			Raw:     logoData,
 			WidthPt: 50, HeightPt: 50,
-			Wrap: table.ImageWrapTopBottom,
+			Wrap: style.ImageWrapTopBottom,
 		},
 		Style: doc.CellStyle{FillColor: doc.ColorLightGray, HasFillColor: true},
 	})

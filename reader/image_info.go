@@ -16,4 +16,13 @@ type ImageInfo struct {
 	Filter           string
 	Format           string
 	Data             []byte
+
+	// Inferred layout and style
+	Opacity    float64
+	ClipCircle bool
+	ClipCX     float64
+	ClipCY     float64
+	ClipR      float64
+	Wrap       int // 0: None, 1: TopBottom, 2: Square, 3: Tight
+	Alignment  int // 0: Left, 1: Center, 2: Right
 }

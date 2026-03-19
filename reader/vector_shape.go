@@ -7,6 +7,7 @@ type VectorShape struct {
 	Y1          float64
 	X2          float64
 	Y2          float64
+	LineWidth   float64
 	Stroke      bool
 	Fill        bool
 	StrokeColor ColorRGB

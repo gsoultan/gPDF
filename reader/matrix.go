@@ -33,6 +33,10 @@ func (m matrix) multiply(other matrix) matrix {
 	}
 }
 
+func (m matrix) scaling() float64 {
+	return math.Sqrt(m.a*m.a + m.b*m.b)
+}
+
 func (m matrix) apply(x, y float64) (float64, float64) {
 	return x*m.a + y*m.c + m.e, x*m.b + y*m.d + m.f
 }

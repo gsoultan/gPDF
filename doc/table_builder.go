@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"gpdf/doc/image"
+	"gpdf/doc/style"
 	"gpdf/doc/table"
 	"gpdf/doc/tagged"
 	"gpdf/model"
@@ -53,8 +54,8 @@ type cellLayout struct {
 
 	// New fields for image wrapping
 	numLinesBesideImage int
-	imageSide           table.ImageSide
-	imageWrap           table.ImageWrap
+	imageSide           style.ImageSide
+	imageWrap           style.ImageWrap
 }
 
 // TableBuilder builds a tagged table that can optionally span multiple pages.
@@ -467,7 +468,7 @@ func (t *TableBuilder) measureCell(cell TableCellSpec, width float64) cellLayout
 
 	height := top + bottom
 	switch l.imageWrap {
-	case table.ImageWrapSquare, table.ImageWrapTight:
+	case style.ImageWrapSquare, style.ImageWrapTight:
 		padding := 0.0
 		if img != nil {
 			padding = img.PaddingPt
@@ -477,7 +478,7 @@ func (t *TableBuilder) measureCell(cell TableCellSpec, width float64) cellLayout
 
 		textHeight := float64(len(l.lines)) * l.lineHeight
 		height += math.Max(imageAreaHeight, textHeight)
-	case table.ImageWrapInline, table.ImageWrapTopBottom:
+	case style.ImageWrapThrough, style.ImageWrapTopBottom:
 		if imgH > 0 {
 			height += imgH
 		}
@@ -618,8 +619,8 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			}
 		}
 
-		if l.imageWrap == table.ImageWrapSquare || l.imageWrap == table.ImageWrapTight {
-			if l.imageSide == table.ImageSideRight {
+		if l.imageWrap == style.ImageWrapSquare || l.imageWrap == style.ImageWrapTight {
+			if l.imageSide == style.ImageSideRight {
 				imageX = left + width - l.rightPad - l.imageWidth
 			} else {
 				imageX = left + l.leftPad
@@ -645,7 +646,7 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			IsJPEG: cell.Image.IsJPEG,
 			MCID:   mcid, HasMCID: !isArtifact, IsArtifact: isArtifact,
 		})
-		if l.imageWrap == table.ImageWrapTopBottom || l.imageWrap == table.ImageWrapInline {
+		if l.imageWrap == style.ImageWrapTopBottom || l.imageWrap == style.ImageWrapThrough {
 			currY -= l.imageHeight
 		}
 	}
@@ -679,10 +680,10 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 		effCellContentWidth := cellContentWidth
 		wordSpacing := 0.0
 
-		if (l.imageWrap == table.ImageWrapSquare || l.imageWrap == table.ImageWrapTight) && l.imageHeight > 0 {
+		if (l.imageWrap == style.ImageWrapSquare || l.imageWrap == style.ImageWrapTight) && l.imageHeight > 0 {
 			if i < l.numLinesBesideImage {
 				effCellContentWidth = cellContentWidth - l.imageWidth - paddingPt
-				if l.imageSide == table.ImageSideLeft {
+				if l.imageSide == style.ImageSideLeft {
 					lineX = left + l.leftPad + l.imageWidth + paddingPt
 				}
 			} else if i == l.numLinesBesideImage {
@@ -768,7 +769,7 @@ func (t *TableBuilder) doPageBreak() {
 	}
 }
 
-func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, fontName string, fontSize float64, imgW, imgH float64, wrap table.ImageWrap, img *table.CellImageSpec) []string {
+func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, fontName string, fontSize float64, imgW, imgH float64, wrap style.ImageWrap, img *table.CellImageSpec) []string {
 	_, right, _, left := cell.Style.ResolvedPadding()
 	contentWidth := cellWidth - left - right
 	if contentWidth <= 0 {
@@ -782,7 +783,7 @@ func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, f
 	}
 
 	lineWidthFn := func(lineIdx int) float64 {
-		if (wrap == table.ImageWrapSquare || wrap == table.ImageWrapTight) && imgW > 0 {
+		if (wrap == style.ImageWrapSquare || wrap == style.ImageWrapTight) && imgW > 0 {
 			if float64(lineIdx)*lineHeight < imgH+paddingPt {
 				return contentWidth - imgW - paddingPt
 			}

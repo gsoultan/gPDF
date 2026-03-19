@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -95,25 +95,7 @@ func normalizeCodeGenOptions(opts CodeGenOptions) CodeGenOptions {
 }
 
 func writeCodeHeader(out *codeOutput, opts CodeGenOptions) error {
-	if err := out.writef("package %s\n\n", opts.PackageName); err != nil {
-		return err
-	}
-	if err := out.writeString("import (\n"); err != nil {
-		return err
-	}
-	if err := out.writeString("\t\"encoding/base64\"\n"); err != nil {
-		return err
-	}
-	if err := out.writeString("\t\"fmt\"\n"); err != nil {
-		return err
-	}
-	if err := out.writeString("\t\"gpdf/doc\"\n"); err != nil {
-		return err
-	}
-	if err := out.writeString("\t\"gpdf/doc/style\"\n"); err != nil {
-		return err
-	}
-	if err := out.writeString(")\n\n"); err != nil {
+	if err := out.writeString("package main\n\nimport (\n\t\"bytes\"\n\t\"encoding/base64\"\n\t\"fmt\"\n\n\t\"gpdf/doc\"\n)\n\n"); err != nil {
 		return err
 	}
 	if err := out.writeString("var generatedAssets = map[string][]byte{}\n\n"); err != nil {
@@ -187,11 +169,20 @@ func writeCodePage(out *codeOutput, page AnalyzedPage, opts CodeGenOptions) erro
 
 func writeTextBlocks(out *codeOutput, blocks []TextBlock, opts CodeGenOptions) error {
 	ordered := append([]TextBlock(nil), blocks...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Y != ordered[j].Y {
-			return ordered[i].Y > ordered[j].Y
+	slices.SortStableFunc(ordered, func(a, b TextBlock) int {
+		if a.Y != b.Y {
+			if a.Y > b.Y {
+				return -1
+			}
+			return 1
 		}
-		return ordered[i].X < ordered[j].X
+		if a.X < b.X {
+			return -1
+		}
+		if a.X > b.X {
+			return 1
+		}
+		return 0
 	})
 	for _, block := range ordered {
 		text := quoteString(block.Text)
@@ -204,7 +195,7 @@ func writeTextBlocks(out *codeOutput, blocks []TextBlock, opts CodeGenOptions) e
 		}
 		if opts.PreserveTextStyles {
 			if err := out.writef(
-				"\tb.DrawTextColored(%s, %s, %s, %s, %s, style.Color{R: %s, G: %s, B: %s})\n",
+				"\tb.DrawTextColored(%s, %s, %s, %s, %s, doc.Color{R: %s, G: %s, B: %s})\n",
 				text,
 				formatFloat(block.X),
 				formatFloat(block.Y),
@@ -263,22 +254,44 @@ func writeImages(out *codeOutput, images []ImageInfo, opts CodeGenOptions) error
 		if err := out.writeString("\t}\n"); err != nil {
 			return err
 		}
-		switch image.Format {
-		case "png":
-			if err := out.writef("\t_ = b.DrawPNG(%s, %s, %s, %s, %s)\n",
-				formatFloat(image.X), formatFloat(image.Y), formatFloat(nonZero(image.WidthPt, float64(image.Width))), formatFloat(nonZero(image.HeightPt, float64(image.Height))), dataName); err != nil {
+		if err := out.writef("\t_ = b.DrawImageWith(doc.ImageOptions{\n"); err != nil {
+			return err
+		}
+		if err := out.writef("\t\tData: %s, X: %s, Y: %s, Width: %s, Height: %s,\n",
+			dataName, formatFloat(image.X), formatFloat(image.Y),
+			formatFloat(nonZero(image.WidthPt, float64(image.Width))),
+			formatFloat(nonZero(image.HeightPt, float64(image.Height)))); err != nil {
+			return err
+		}
+		if image.Format == "jpeg" {
+			if err := out.writef("\t\tIsJPEG: true, PixelWidth: %d, PixelHeight: %d, ColorSpace: %s,\n",
+				image.Width, image.Height, quoteString(image.ColorSpace)); err != nil {
 				return err
 			}
-		case "jpeg":
-			if err := out.writef("\tb.DrawJPEG(%s, %s, %s, %s, %s, %d, %d, %s)\n",
-				formatFloat(image.X), formatFloat(image.Y), formatFloat(nonZero(image.WidthPt, float64(image.Width))), formatFloat(nonZero(image.HeightPt, float64(image.Height))), dataName, image.Width, image.Height, quoteString(image.ColorSpace)); err != nil {
+		} else {
+			if err := out.writef("\t\tPixelWidth: %d, PixelHeight: %d, BitsPerComponent: %d, ColorSpace: %s,\n",
+				image.Width, image.Height, image.BitsPerComponent, quoteString(image.ColorSpace)); err != nil {
 				return err
 			}
-		default:
-			if err := out.writef("\tb.DrawImage(%s, %s, %s, %s, %s, %d, %d, %d, %s)\n",
-				formatFloat(image.X), formatFloat(image.Y), formatFloat(nonZero(image.WidthPt, float64(image.Width))), formatFloat(nonZero(image.HeightPt, float64(image.Height))), dataName, image.Width, image.Height, image.BitsPerComponent, quoteString(image.ColorSpace)); err != nil {
+		}
+		if image.Opacity < 1.0 && image.Opacity > 0 {
+			if err := out.writef("\t\tOpacity: %s,\n", formatFloat(image.Opacity)); err != nil {
 				return err
 			}
+		}
+		if image.Rotation != 0 {
+			if err := out.writef("\t\tRotateDeg: %s,\n", formatFloat(image.Rotation)); err != nil {
+				return err
+			}
+		}
+		if image.ClipCircle {
+			if err := out.writef("\t\tClipCircle: true, ClipCX: %s, ClipCY: %s, ClipRadius: %s,\n",
+				formatFloat(image.ClipCX), formatFloat(image.ClipCY), formatFloat(image.ClipR)); err != nil {
+				return err
+			}
+		}
+		if err := out.writeString("\t})\n"); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -300,12 +313,13 @@ func writeShapes(out *codeOutput, shapes []VectorShape, pageIndex int) error {
 			if !shape.Stroke {
 				continue
 			}
-			if err := out.writef("\tb.DrawLine(%d, %s, %s, %s, %s, doc.LineStyle{Width: 1, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
+			if err := out.writef("\tb.DrawLine(%d, %s, %s, %s, %s, doc.LineStyle{Width: %s, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
 				pageIndex,
 				formatFloat(shape.X1),
 				formatFloat(shape.Y1),
 				formatFloat(shape.X2),
 				formatFloat(shape.Y2),
+				formatFloat(shape.LineWidth),
 				formatFloat(shape.StrokeColor.R),
 				formatFloat(shape.StrokeColor.G),
 				formatFloat(shape.StrokeColor.B),
@@ -318,10 +332,11 @@ func writeShapes(out *codeOutput, shapes []VectorShape, pageIndex int) error {
 			width := max(shape.X1, shape.X2) - x
 			height := max(shape.Y1, shape.Y2) - y
 			if shape.Stroke && shape.Fill {
-				if err := out.writef("\tb.FillStrokeRect(%d, %s, %s, %s, %s, doc.Color{R: %s, G: %s, B: %s}, doc.LineStyle{Width: 1, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
+				if err := out.writef("\tb.FillStrokeRect(%d, %s, %s, %s, %s, doc.Color{R: %s, G: %s, B: %s}, doc.LineStyle{Width: %s, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
 					pageIndex,
 					formatFloat(x), formatFloat(y), formatFloat(width), formatFloat(height),
 					formatFloat(shape.FillColor.R), formatFloat(shape.FillColor.G), formatFloat(shape.FillColor.B),
+					formatFloat(shape.LineWidth),
 					formatFloat(shape.StrokeColor.R), formatFloat(shape.StrokeColor.G), formatFloat(shape.StrokeColor.B),
 				); err != nil {
 					return err
@@ -339,9 +354,10 @@ func writeShapes(out *codeOutput, shapes []VectorShape, pageIndex int) error {
 				continue
 			}
 			if shape.Stroke {
-				if err := out.writef("\tb.DrawRect(%d, %s, %s, %s, %s, doc.LineStyle{Width: 1, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
+				if err := out.writef("\tb.DrawRect(%d, %s, %s, %s, %s, doc.LineStyle{Width: %s, Color: doc.Color{R: %s, G: %s, B: %s}})\n",
 					pageIndex,
 					formatFloat(x), formatFloat(y), formatFloat(width), formatFloat(height),
+					formatFloat(shape.LineWidth),
 					formatFloat(shape.StrokeColor.R), formatFloat(shape.StrokeColor.G), formatFloat(shape.StrokeColor.B),
 				); err != nil {
 					return err
@@ -363,7 +379,14 @@ func writeTables(out *codeOutput, tables []Table, opts CodeGenOptions, pageIndex
 		if err := out.writeString("\t{\n"); err != nil {
 			return err
 		}
-		if err := out.writef("\t\ttbl := b.BeginTable(%d, 0, 0, 400, 200, %d)\n", pageIndex, table.Cols); err != nil {
+		if err := out.writef("\t\ttbl := b.BeginTable(%d, %s, %s, %s, %s, %d)\n",
+			pageIndex,
+			formatFloat(table.X),
+			formatFloat(table.Y),
+			formatFloat(table.Width),
+			formatFloat(table.Height),
+			table.Cols,
+		); err != nil {
 			return err
 		}
 		if err := out.writeString("\t\tif tbl != nil {\n"); err != nil {

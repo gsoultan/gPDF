@@ -51,6 +51,8 @@ func AnalyzePagesWithOptions(src contentSource, opts CodeGenOptions, visit func(
 		var images []ImageInfo
 		if opts.EmbedImages {
 			images = extractImagesFromOps(ops, src, parser, resources, pageIdx, identityMatrix(), make(map[model.Ref]struct{}, 4), opts.MaxImageBytes)
+			pageSize := resolvePageSize(page)
+			images = InferImageLayouts(images, blocks, pageSize.Width)
 		}
 
 		var shapes []VectorShape
@@ -59,14 +61,20 @@ func AnalyzePagesWithOptions(src contentSource, opts CodeGenOptions, visit func(
 		}
 
 		var tables []Table
+		pageSize := resolvePageSize(page)
 		if opts.PreserveTables {
-			layout := PageLayout{Page: pageIdx, Blocks: blocks}
+			layout := PageLayout{
+				Page:   pageIdx,
+				Width:  pageSize.Width,
+				Height: pageSize.Height,
+				Blocks: blocks,
+			}
 			tables = DetectTables([]PageLayout{layout})[0]
 		}
 
 		analyzed := AnalyzedPage{
 			Index:  pageIdx,
-			Size:   resolvePageSize(page),
+			Size:   pageSize,
 			Blocks: blocks,
 			Images: images,
 			Tables: tables,

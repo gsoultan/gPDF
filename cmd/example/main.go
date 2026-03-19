@@ -23,14 +23,15 @@ func main() {
 	}
 	path := os.Args[1]
 
-	// New: construct a PDF with the fluent API (optional DrawText on first page)
 	b := doc.New().
 		Title("gPDF Example").
 		Author("gPDF").
-		PageSize(595, 842)
-	b.AddPage()
-	b.DrawText("Hello, PDF 2.0!", 100, 700, "Helvetica", 14)
-	b.AddPage()
+		PageSize(595, 842).
+		AddPage().
+		Flow(doc.FlowOptions{Margin: 72}).
+		Paragraph("Hello, PDF 2.0!").
+		End().
+		AddPage()
 	d, err := b.Build()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

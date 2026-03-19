@@ -31,25 +31,20 @@ func main() {
 		A4().
 		SetLanguage("en-US").
 		SetTagged().
-		SetAcroFormSigFlags(3)
-	page := builder.AddPage().CurrentPage()
+		SetAcroFormSigFlags(3).
+		AddPage()
+
+	flow := builder.Flow(doc.FlowOptions{Margin: 72})
 
 	// Section 1: tagged heading and paragraph.
-	page.BeginSection().
-		Heading("PDF 2.0 Demo", 1).At(72, 780).Draw().
-		TextBox("This document demonstrates tagged content, optional layers, AcroForm fields, and AES-256 encryption produced by gPDF.").
-		At(72, 750).
-		Font("Helvetica").
-		Size(12).
-		Width(451).
-		AsParagraph().
-		Draw().
-		EndSection()
+	builder.BeginSection()
+	flow.Heading("PDF 2.0 Demo", 1).
+		Paragraph("This document demonstrates tagged content, optional layers, AcroForm fields, and AES-256 encryption produced by gPDF.")
+	builder.EndSection()
 
 	// Section 2: tagged table with header row.
-	tb := page.Table(3).
-		At(72, 620).
-		Width(451).
+	flow.Space(20).
+		Table(3).
 		AllowPageBreak().
 		HeaderSpec(
 			doc.TableCellSpec{Text: "Item", IsHeader: true},
@@ -71,35 +66,29 @@ func main() {
 			doc.TableCellSpec{Text: "Interactive forms (text fields, checkboxes, submit buttons)."},
 			doc.TableCellSpec{Text: "$750.00"},
 		).
-		Draw()
-	if tb == nil {
-		fmt.Fprintln(os.Stderr, "failed to create table")
-		os.Exit(1)
-	}
+		Done().
+		Space(40)
 
 	// Section 3: optional content group (layer) with overlay note.
 	layer := builder.BeginLayer("Overlay", true)
 	builder.DrawInLayer(layer, 0, func(db *doc.DocumentBuilder) {
-		p := db.CurrentPage()
-		p.TextBox("This note belongs to the 'Overlay' layer. In viewers that support optional content groups, it can be toggled.").
-			At(72, 460).
-			Font("Helvetica-Oblique").
+		db.Flow(doc.FlowOptions{Left: 72, Right: 72, Top: 842 - 460}).
 			Size(10).
-			Width(451).
-			AsQuote().
-			Draw()
+			Paragraph("This note belongs to the 'Overlay' layer. In viewers that support optional content groups, it can be toggled.").
+			End()
 	})
 
 	// Section 4: simple tagged list.
-	page.BeginSection().
-		Heading("Features", 2).At(72, 420).Draw().
+	builder.BeginSection()
+	flow.Heading("Features", 2).
+		Space(10).
 		List([]string{
 			"Tagged headings, paragraphs, tables, and lists for accessibility.",
 			"Optional content layers for conditional display.",
 			"AcroForm fields for interactive data entry.",
 			"AES-256 encryption for modern password protection.",
-		}).At(72, 400).LineHeight(14).Ordered(true).Font("Helvetica").Size(11).Draw().
-		EndSection()
+		}, true)
+	builder.EndSection()
 
 	// Section 5: AcroForm fields on the first page.
 	builder.
@@ -107,9 +96,9 @@ func main() {
 		AddTextField(0, 72, 310, 320, 330, "email", "", "Your email address", true).
 		AddCheckBox(0, 72, 280, 84, 292, "accept_terms", false, "I accept the terms", true)
 
-	page.Text("Name:").At(72, 365).Font("Helvetica").Size(11).Draw()
-	page.Text("Email:").At(72, 335).Font("Helvetica").Size(11).Draw()
-	page.Text("I accept the terms").At(90, 285).Font("Helvetica").Size(11).Draw()
+	builder.CurrentPage().Text("Name:").At(72, 365).Font("Helvetica").Size(11).Draw()
+	builder.CurrentPage().Text("Email:").At(72, 335).Font("Helvetica").Size(11).Draw()
+	builder.CurrentPage().Text("I accept the terms").At(90, 285).Font("Helvetica").Size(11).Draw()
 
 	builder.AddSubmitButton(0, 380, 280, 520, 300, "submit", "Submit demo", "https://example.com/submit", "Submit the demo form")
 

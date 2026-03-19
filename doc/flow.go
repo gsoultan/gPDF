@@ -4,7 +4,16 @@ import (
 	"gpdf/doc/image"
 	"gpdf/doc/style"
 	"gpdf/doc/text"
+	"gpdf/model"
 )
+
+// FloatingImage represents an image that text should wrap around.
+type FloatingImage struct {
+	X, Y          float64
+	Width, Height float64
+	Margin        float64
+	Wrap          style.ImageWrap
+}
 
 // FlowOptions configures the layout of a flowing content area.
 type FlowOptions struct {
@@ -23,6 +32,7 @@ type FlowBuilder struct {
 	currY     float64
 	style     TextStyle
 	align     text.Align
+	floating  []FloatingImage
 }
 
 // Flow starts a flowing layout region on the current page.
@@ -157,6 +167,80 @@ func (f *FlowBuilder) Heading(text string, level int) *FlowBuilder {
 	return f
 }
 
+// Image adds an image to the flow.
+func (f *FlowBuilder) Image(data []byte, w, h float64) *FlowBuilder {
+	return f.ImageWithLayout(data, style.ImageLayout{Width: w, Height: h}, style.DefaultImageStyle())
+}
+
+// ImageWithLayout adds an image to the flow with the given layout and style.
+func (f *FlowBuilder) ImageWithLayout(imgData []byte, layout style.ImageLayout, s style.ImageStyle) *FlowBuilder {
+	// 1. Resolve dimensions
+	w, h := layout.Width, layout.Height
+	if w <= 0 || h <= 0 {
+		// Try to decode image to get dimensions
+		imgInfo, err := image.ProcessImage(imgData)
+		if err == nil {
+			if w <= 0 && h <= 0 {
+				w = float64(imgInfo.WidthPx) * 0.75 // basic scale
+				h = float64(imgInfo.HeightPx) * 0.75
+			} else if w <= 0 {
+				w = h * float64(imgInfo.WidthPx) / float64(imgInfo.HeightPx)
+			} else {
+				h = w * float64(imgInfo.HeightPx) / float64(imgInfo.WidthPx)
+			}
+		} else {
+			if w <= 0 {
+				w = 100
+			}
+			if h <= 0 {
+				h = 100
+			}
+		}
+	}
+
+	// 2. Handle alignment/wrapping
+	areaWidth := f.builder.pageWidth(f.pageIndex) - f.opts.Left - f.opts.Right
+	x := f.opts.Left
+
+	switch layout.Align {
+	case style.ImageAlignCenter:
+		x = f.opts.Left + (areaWidth-w)/2
+	case style.ImageAlignRight:
+		x = f.opts.Left + areaWidth - w
+	}
+
+	// Check if we need a page break (for TopBottom or None)
+	if layout.Wrap == style.ImageWrapNone || layout.Wrap == style.ImageWrapTopBottom {
+		if f.currY-h < f.opts.Bottom {
+			f.builder.AddPage()
+			f.pageIndex = len(f.builder.pc.pages) - 1
+			f.currY = f.builder.pageHeight(f.pageIndex) - f.opts.Top
+		}
+	}
+
+	// 3. Draw image
+	y := f.currY - h
+	f.builder.DrawImageWith(ImageOptions{
+		Data: imgData, X: x, Y: y, Width: w, Height: h,
+		Opacity: s.Opacity, RotateDeg: s.Rotation,
+		ClipCircle: s.ClipCircle, ClipCX: s.ClipCX, ClipCY: s.ClipCY, ClipRadius: s.ClipR,
+		PageIndex: f.pageIndex,
+	})
+
+	// 4. Handle wrapping logic
+	if layout.Wrap == style.ImageWrapSquare || layout.Wrap == style.ImageWrapTight {
+		f.floating = append(f.floating, FloatingImage{
+			X: x, Y: y, Width: w, Height: h, Margin: layout.Margin, Wrap: layout.Wrap,
+		})
+		// Keep currY where it is for square wrapping
+	} else {
+		f.currY -= h + layout.Margin
+	}
+
+	f.syncCursor()
+	return f
+}
+
 // Paragraph adds a wrapping paragraph to the flow.
 func (f *FlowBuilder) Paragraph(text string) *FlowBuilder {
 	style := f.getEffectiveStyle()
@@ -173,42 +257,47 @@ func (f *FlowBuilder) Paragraph(text string) *FlowBuilder {
 		Color:          style.Color,
 		HasColor:       style.Color != (Color{}),
 		Align:          f.align,
+		LineRectFn: func(lineIdx int) (float64, float64) {
+			y := f.currY - float64(lineIdx)*style.FontSize*1.25
+			xOffset := 0.0
+			width := f.Width()
+
+			for _, img := range f.floating {
+				// Check if this line overlaps with the floating image Y range
+				imgTop := img.Y + img.Height
+				imgBottom := img.Y
+				lineTop := y
+				lineBottom := y - style.FontSize
+
+				if lineTop > imgBottom-img.Margin && lineBottom < imgTop+img.Margin {
+					// Overlap!
+					if img.X < f.Left()+f.Width()/2 {
+						// Image is on the left
+						overlapX := img.X + img.Width + img.Margin - f.Left()
+						if overlapX > xOffset {
+							xOffset = overlapX
+							width = f.Width() - xOffset
+						}
+					} else {
+						// Image is on the right
+						overlapWidth := f.Left() + f.Width() - (img.X - img.Margin)
+						if overlapWidth > (f.Width() - width) {
+							width = f.Width() - overlapWidth - xOffset
+						}
+					}
+				}
+			}
+			return xOffset, width
+		},
 	}
 
-	f.pageIndex, f.currY = f.builder.layoutTextIntoPages(f.pageIndex, text, f.Left(), f.currY, style.FontName, style.FontSize, opts, false, "")
+	f.pageIndex, f.currY = f.builder.layoutTextIntoPages(f.pageIndex, text, f.Left(), f.currY, style.FontName, style.FontSize, opts, f.builder.useTagged, model.Name("P"))
 	f.syncCursor()
 	return f
 }
 
 // Space adds vertical space to the flow.
 func (f *FlowBuilder) Space(h float64) *FlowBuilder {
-	f.currY -= h
-	f.syncCursor()
-	return f
-}
-
-// Image adds an image to the flow.
-func (f *FlowBuilder) Image(data []byte, w, h float64) *FlowBuilder {
-	if f.currY-h < f.Bottom() {
-		f.newPage()
-	}
-
-	info, err := image.ProcessImage(data)
-	if err != nil {
-		return f
-	}
-
-	f.builder.DrawImage(f.Left(), f.currY-h, w, h, info.Raw, info.WidthPx, info.HeightPx, info.BitsPerComponent, info.ColorSpace)
-	if info.IsJPEG {
-		idx := f.pageIndex
-		if idx >= 0 && idx < len(f.builder.pc.pages) {
-			runs := f.builder.pc.pages[idx].ImageRuns
-			if len(runs) > 0 {
-				runs[len(runs)-1].IsJPEG = true
-				f.builder.pc.pages[idx].ImageRuns = runs
-			}
-		}
-	}
 	f.currY -= h
 	f.syncCursor()
 	return f

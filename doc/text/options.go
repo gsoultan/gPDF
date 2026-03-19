@@ -20,6 +20,7 @@ type LayoutOptions struct {
 	ParagraphSpacing float64
 	AllowPageBreak   bool
 	LetterSpacing    float64
+	LineRectFn       LineRectFunc
 	Color            style.Color
 	HasColor         bool
 	IsVertical       bool

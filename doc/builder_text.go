@@ -67,7 +67,12 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 	}
 	ps := &b.pc.pages[pageIndex]
 
-	lines := b.wrapTextLines(textStr, fontSize, opts.Width, fontName)
+	var lines []string
+	if opts.LineRectFn != nil {
+		lines = b.wrapTextLinesRect(textStr, fontSize, fontName, opts.LineRectFn)
+	} else {
+		lines = b.wrapTextLines(textStr, fontSize, opts.Width, fontName)
+	}
 	if len(lines) == 0 {
 		return pageIndex, y
 	}
@@ -105,21 +110,27 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 			currentY = b.pageHeight(currentPage) - marginBottom
 		}
 
+		lineOffsetX := 0.0
+		lineWidthTarget := opts.Width
+		if opts.LineRectFn != nil {
+			lineOffsetX, lineWidthTarget = opts.LineRectFn(i)
+		}
+
 		lineWidth := b.textWidthStyle(line, fontSize, fontName, opts.LetterSpacing, 0)
-		offsetX := x
+		offsetX := x + lineOffsetX
 		wordSpacing := 0.0
-		free := opts.Width - lineWidth
+		free := lineWidthTarget - lineWidth
 		// A line is the last in its paragraph when it is the final line overall
 		// or when the next line is empty (paragraph break emitted by WrapLines).
 		isLastInParagraph := i == len(lines)-1 || lines[i+1] == ""
 		switch opts.Align {
 		case TextAlignCenter:
 			if free > 0 {
-				offsetX = x + free/2
+				offsetX = x + lineOffsetX + free/2
 			}
 		case TextAlignRight:
 			if free > 0 {
-				offsetX = x + free
+				offsetX = x + lineOffsetX + free
 			}
 		case TextAlignJustify:
 			if !isLastInParagraph && free > 0 {
@@ -128,7 +139,7 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 					wordSpacing = free / float64(numSpaces)
 					// Recalculate width with the new word spacing for exact alignment
 					lineWidth = b.textWidthStyle(line, fontSize, fontName, opts.LetterSpacing, wordSpacing)
-					free = opts.Width - lineWidth
+					free = lineWidthTarget - lineWidth
 				}
 			}
 		}
@@ -208,6 +219,11 @@ func countWordSpaces(s string) int {
 func (b *DocumentBuilder) wrapTextLines(s string, fontSize, width float64, fontName string) []string {
 	widthFn := b.fontWidthFunc(fontName)
 	return text.WrapLines(s, fontSize, width, widthFn)
+}
+
+func (b *DocumentBuilder) wrapTextLinesRect(s string, fontSize float64, fontName string, lineRectFn text.LineRectFunc) []string {
+	widthFn := b.fontWidthFunc(fontName)
+	return text.WrapLinesRect(s, fontSize, widthFn, lineRectFn)
 }
 
 // wrapTextLinesDynamic splits text into lines that can have different widths.

@@ -111,8 +111,23 @@ func detectTablesOnPage(pl PageLayout) []Table {
 	type cellKey struct{ row, col int }
 	cellMap := make(map[cellKey][]string)
 
+	// Build one Table from all candidate rows.
+	tbl := Table{
+		Page: pl.Page,
+		Rows: len(candidates),
+		Cols: len(colAnchors),
+	}
+
+	minX, minY := 1e9, 1e9
+	maxX, maxY := -1e9, -1e9
+
 	for rowIdx, row := range candidates {
 		for _, b := range row.blocks {
+			minX = min(minX, b.X)
+			minY = min(minY, b.Y)
+			maxX = max(maxX, b.X+b.Width)
+			maxY = max(maxY, b.Y+b.Height)
+
 			colIdx := nearestAnchor(b.X, colAnchors, colTol)
 			if colIdx < 0 {
 				continue
@@ -122,11 +137,11 @@ func detectTablesOnPage(pl PageLayout) []Table {
 		}
 	}
 
-	// Build one Table from all candidate rows.
-	tbl := Table{
-		Page: pl.Page,
-		Rows: len(candidates),
-		Cols: len(colAnchors),
+	if len(cellMap) > 0 {
+		tbl.X = minX
+		tbl.Y = minY
+		tbl.Width = maxX - minX
+		tbl.Height = maxY - minY
 	}
 	for k, texts := range cellMap {
 		tbl.Cells = append(tbl.Cells, TableCell{
