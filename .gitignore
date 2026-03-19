@@ -9,3 +9,4 @@ go.sum
 /cv_output.pdf
 /example.pdf
 /docs/PDF_2.0_coverage_notes.md
+/*.pdf

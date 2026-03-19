@@ -30,6 +30,36 @@ func (b *DocumentBuilder) Build() (Document, error) {
 		return nil, err
 	}
 
+	// Add shared standard ToUnicode stream if used
+	standardToUnicodeRef := model.Ref{ObjectNumber: 0, Generation: 0}
+	for _, obj := range objs {
+		if pd, ok := obj.(model.Dict); ok {
+			if res, ok := pd[model.Name("Resources")].(model.Dict); ok {
+				if _, hasSent := res[model.Name("_standardToUnicode")]; hasSent {
+					if standardToUnicodeRef.ObjectNumber == 0 {
+						standardToUnicodeRef = model.Ref{ObjectNumber: nextNum, Generation: 0}
+						nextNum++
+						cmap := buildToUnicodeWinAnsiCMap()
+						objs[standardToUnicodeRef.ObjectNumber] = &model.Stream{
+							Dict:    model.Dict{model.Name("Length"): model.Integer(len(cmap))},
+							Content: cmap,
+						}
+					}
+					delete(res, model.Name("_standardToUnicode"))
+					if fontDict, ok := res[model.Name("Font")].(model.Dict); ok {
+						for _, fontObj := range fontDict {
+							if fd, ok := fontObj.(model.Dict); ok {
+								if subtype, _ := fd[model.Name("Subtype")].(model.Name); subtype == model.Name("Type1") {
+									fd[model.Name("ToUnicode")] = standardToUnicodeRef
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	pagesDict := model.Dict{
 		model.Name("Type"):  model.Name("Pages"),
 		model.Name("Kids"):  pageRefs,

@@ -27,11 +27,25 @@ type CellStyle struct {
 	HasFillColor bool
 }
 
-// ResolvedPadding returns the effective padding, defaulting to 4pt on all sides.
+// ResolvedPadding returns the effective padding.
+// If a padding value is 0, it defaults to 4.0.
 func (s CellStyle) ResolvedPadding() (top, right, bottom, left float64) {
 	const defaultPad = 4.0
-	if s.PaddingTop == 0 && s.PaddingRight == 0 && s.PaddingBottom == 0 && s.PaddingLeft == 0 {
-		return defaultPad, defaultPad, defaultPad, defaultPad
+	top = s.PaddingTop
+	if top == 0 {
+		top = defaultPad
 	}
-	return s.PaddingTop, s.PaddingRight, s.PaddingBottom, s.PaddingLeft
+	right = s.PaddingRight
+	if right == 0 {
+		right = defaultPad
+	}
+	bottom = s.PaddingBottom
+	if bottom == 0 {
+		bottom = defaultPad
+	}
+	left = s.PaddingLeft
+	if left == 0 {
+		left = defaultPad
+	}
+	return
 }

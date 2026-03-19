@@ -8,9 +8,10 @@ import (
 )
 
 // measureTableCellHeight returns an approximate height for the given cell content.
-func measureTableCellHeight(cell TableCellSpec, cellWidth float64) float64 {
+func measureTableCellHeight(b *DocumentBuilder, cell TableCellSpec, cellWidth float64) float64 {
 	const fontSize = 10.0
 	const lineSpacing = 1.2
+	const fontName = "Helvetica"
 
 	top, right, bottom, left := cell.Style.ResolvedPadding()
 	height := top
@@ -28,27 +29,16 @@ func measureTableCellHeight(cell TableCellSpec, cellWidth float64) float64 {
 			h = float64(cell.Image.HeightPx) * scale
 		}
 		if h > 0 {
-			height += h + top
+			height += h
 		}
 	}
 
-	lines := 0
-	if cell.Text != "" {
-		lines++
-	}
-	for _, p := range cell.Paragraphs {
-		if p != "" {
-			lines++
-		}
-	}
-	for _, item := range cell.ListItems {
-		if item != "" {
-			lines++
-		}
-	}
-	if lines > 0 {
+	lines := collectCellLines(b, cell, cellWidth, fontName, fontSize)
+	if len(lines) > 0 {
 		lineHeight := fontSize * lineSpacing
-		height += float64(lines) * lineHeight
+		// For the first line, we only need the ascent.
+		// For subsequent lines, we add the full line height.
+		height += float64(len(lines)) * lineHeight
 	}
 	height += bottom
 	return height
@@ -180,7 +170,7 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 			span = 1
 		}
 		cellWidth := baseColWidth * float64(span)
-		h := measureTableCellHeight(cell, cellWidth)
+		h := measureTableCellHeight(t.builder, cell, cellWidth)
 		cellHeights[idx] = h
 		if h > rowHeight {
 			rowHeight = h
@@ -319,10 +309,11 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 			currentY = imgY - topPad
 		}
 
-		lines := collectCellLines(cell)
+		lines := collectCellLines(t.builder, cell, cellWidth, fontName, fontSize)
 
 		lineHeight := fontSize * lineSpacing
-		for _, text := range lines {
+		ascent := fontSize * 0.8
+		for i, text := range lines {
 			if text == "" {
 				continue
 			}
@@ -331,6 +322,10 @@ func (t *TableBuilder) addRow(isHeader bool, cells ...TableCellSpec) *TableBuild
 			sc.MCIDs = append(sc.MCIDs, mcid)
 			x := left + leftPad
 			y := currentY
+			if i == 0 {
+				y -= ascent
+				currentY -= ascent
+			}
 			currentY -= lineHeight
 			tr := textRun{
 				Text:            text,
@@ -397,7 +392,7 @@ func (t *TableBuilder) renderVisualRow(isHeader bool, cells []TableCellSpec) {
 		if col >= t.cols {
 			break
 		}
-		h := measureTableCellHeight(cell, cellWidth)
+		h := measureTableCellHeight(t.builder, cell, cellWidth)
 		if h > rowHeight {
 			rowHeight = h
 		}
@@ -413,34 +408,56 @@ func (t *TableBuilder) renderVisualRow(isHeader bool, cells []TableCellSpec) {
 	const fontSize = 10.0
 	const lineSpacing = 1.2
 
-	for col, cell := range cells {
-		if col >= t.cols {
+	logicalCol := 0
+	for _, cell := range cells {
+		if logicalCol >= t.cols {
 			break
 		}
 
-		left := t.x + float64(col)*cellWidth
+		span := cell.ColSpan
+		if span <= 0 {
+			span = 1
+		}
+		cellColWidth := cellWidth * float64(span)
+
+		left := t.x + float64(logicalCol)*cellWidth
 		topPad, _, bottomPad, leftPad := cell.Style.ResolvedPadding()
+
+		// Draw cell background fill for repeated headers.
+		if isHeader && t.HasHeaderFillColor {
+			t.builder.FillRect(t.pageIndex, left, rowBottom, cellColWidth, rowHeight, t.HeaderFillColor)
+		} else if cell.Style.HasFillColor {
+			t.builder.FillRect(t.pageIndex, left, rowBottom, cellColWidth, rowHeight, cell.Style.FillColor)
+		}
+
 		currentY := rowBottom + rowHeight - topPad
 
-		lines := collectCellLines(cell)
+		lines := collectCellLines(t.builder, cell, cellColWidth, fontName, fontSize)
 		lineHeight := fontSize * lineSpacing
-		for _, text := range lines {
+		ascent := fontSize * 0.8
+		for i, text := range lines {
 			if text == "" {
 				continue
 			}
+			y := currentY
+			if i == 0 {
+				y -= ascent
+				currentY -= ascent
+			}
+			currentY -= lineHeight
 			ps.TextRuns = append(ps.TextRuns, textRun{
 				Text:            text,
 				X:               left + leftPad,
-				Y:               currentY,
+				Y:               y,
 				FontName:        fontName,
 				FontSize:        fontSize,
 				UseDefaultColor: true,
 			})
-			currentY -= lineHeight
 			if currentY < rowBottom+bottomPad {
 				break
 			}
 		}
+		logicalCol += span
 	}
 	t.currentY = rowBottom
 }
@@ -451,6 +468,15 @@ func (t *TableBuilder) EndTable() *DocumentBuilder {
 		return nil
 	}
 	return t.builder
+}
+
+// CurrentY returns the current vertical position of the table.
+// Useful for continuing drawing after the table.
+func (t *TableBuilder) CurrentY() float64 {
+	if t == nil {
+		return 0
+	}
+	return t.currentY
 }
 
 // computeImageDimensions calculates the display size of a cell image,
@@ -474,22 +500,39 @@ func computeImageDimensions(img *TableCellImageSpec, cellWidth, rowHeight, leftP
 	return w, h
 }
 
-// collectCellLines gathers all text lines from a cell (plain text, paragraphs, list items).
-func collectCellLines(cell TableCellSpec) []string {
-	var lines []string
-	if cell.Text != "" {
-		lines = append(lines, cell.Text)
+// collectCellLines gathers all text lines from a cell (plain text, paragraphs, list items)
+// and wraps them to fit the given cellWidth.
+func collectCellLines(b *DocumentBuilder, cell TableCellSpec, cellWidth float64, fontName string, fontSize float64) []string {
+	_, right, _, left := cell.Style.ResolvedPadding()
+	contentWidth := cellWidth - left - right
+	if contentWidth <= 0 {
+		contentWidth = 0.1
 	}
-	lines = append(lines, cell.Paragraphs...)
+
+	var allLines []string
+	if cell.Text != "" {
+		allLines = append(allLines, b.wrapTextLines(cell.Text, fontSize, contentWidth, fontName)...)
+	}
+	for _, p := range cell.Paragraphs {
+		if p != "" {
+			allLines = append(allLines, b.wrapTextLines(p, fontSize, contentWidth, fontName)...)
+		}
+	}
 	for i, item := range cell.ListItems {
+		if item == "" {
+			continue
+		}
 		prefix := ""
 		switch cell.ListKind {
 		case "ordered":
 			prefix = fmt.Sprintf("%d. ", i+1)
 		case "unordered":
-			prefix = "• "
+			prefix = "\u2022 "
+		default:
+			prefix = "\u2022 "
 		}
-		lines = append(lines, prefix+item)
+		wrapped := b.wrapTextLines(prefix+item, fontSize, contentWidth, fontName)
+		allLines = append(allLines, wrapped...)
 	}
-	return lines
+	return allLines
 }

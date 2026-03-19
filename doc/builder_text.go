@@ -579,7 +579,7 @@ func (b *DocumentBuilder) DrawList(pageIndex int, items []string, x, y, lineHeig
 		if raw == "" {
 			continue
 		}
-		label := "• "
+		label := "\u2022 "
 		if ordered {
 			label = fmt.Sprintf("%d. ", idx+1)
 		}

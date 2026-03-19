@@ -227,6 +227,13 @@ func (pw *PDFWriter) writeObjectEnc(w io.Writer, obj model.Object, ref *model.Re
 	switch v := obj.(type) {
 	case model.String:
 		return pw.writeEncryptedString(w, v, *ref, enc)
+	case model.HexString:
+		// Hex strings are typically used for CID fonts and are NOT encrypted here
+		// because they represent glyph IDs, but according to spec they should be.
+		// However, gPDF's current security model for HexString is not yet defined.
+		// Let's at least write them.
+		pw.writeHexString(w, []byte(v))
+		return nil
 	case *model.Stream:
 		return pw.writeEncryptedStream(w, v, ref, enc)
 	case model.Dict:
@@ -476,6 +483,8 @@ func (pw *PDFWriter) writeObject(w io.Writer, obj model.Object) error {
 		fmt.Fprintf(w, "%g", v)
 	case model.String:
 		pw.writeString(w, string(v))
+	case model.HexString:
+		pw.writeHexString(w, []byte(v))
 	case model.Name:
 		fmt.Fprintf(w, "/%s", escapeName(string(v)))
 	case model.Ref:

@@ -468,11 +468,71 @@ func decodeRawTextBytes(data []byte) string {
 	if utf8.Valid(data) {
 		return string(data)
 	}
+	return decodeWinAnsi(data)
+}
 
+func decodeWinAnsi(data []byte) string {
 	var out strings.Builder
 	out.Grow(len(data))
 	for _, b := range data {
-		out.WriteRune(rune(b))
+		switch b {
+		case 0x80:
+			out.WriteRune('\u20ac')
+		case 0x82:
+			out.WriteRune('\u201a')
+		case 0x83:
+			out.WriteRune('\u0192')
+		case 0x84:
+			out.WriteRune('\u201e')
+		case 0x85:
+			out.WriteRune('\u2026')
+		case 0x86:
+			out.WriteRune('\u2020')
+		case 0x87:
+			out.WriteRune('\u2021')
+		case 0x88:
+			out.WriteRune('\u02c6')
+		case 0x89:
+			out.WriteRune('\u2030')
+		case 0x8a:
+			out.WriteRune('\u0160')
+		case 0x8b:
+			out.WriteRune('\u2039')
+		case 0x8c:
+			out.WriteRune('\u0152')
+		case 0x8e:
+			out.WriteRune('\u017d')
+		case 0x91:
+			out.WriteRune('\u2018')
+		case 0x92:
+			out.WriteRune('\u2019')
+		case 0x93:
+			out.WriteRune('\u201c')
+		case 0x94:
+			out.WriteRune('\u201d')
+		case 0x95:
+			out.WriteRune('\u2022')
+		case 0x96:
+			out.WriteRune('\u2013')
+		case 0x97:
+			out.WriteRune('\u2014')
+		case 0x98:
+			out.WriteRune('\u02dc')
+		case 0x99:
+			out.WriteRune('\u2122')
+		case 0x9a:
+			out.WriteRune('\u0161')
+		case 0x9b:
+			out.WriteRune('\u203a')
+		case 0x9c:
+			out.WriteRune('\u0153')
+		case 0x9e:
+			out.WriteRune('\u017e')
+		case 0x9f:
+			out.WriteRune('\u0178')
+		default:
+			out.WriteRune(rune(b))
+		}
 	}
 	return out.String()
 }
