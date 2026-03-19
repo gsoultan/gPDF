@@ -14,40 +14,64 @@ func WrapLines(text string, fontSize, width float64, widthFn FontWidthFunc) []st
 	if width <= 0 {
 		return nil
 	}
+	return WrapLinesDynamic(text, fontSize, widthFn, func(int) float64 { return width })
+}
+
+// LineWidthFunc returns the available width for the given line index.
+type LineWidthFunc func(lineIdx int) float64
+
+// WrapLinesDynamic splits text into lines using a potentially different width for each line.
+func WrapLinesDynamic(text string, fontSize float64, widthFn FontWidthFunc, lineWidthFn LineWidthFunc) []string {
 	var lines []string
-	paragraphs := strings.Split(text, "\n")
-	for _, para := range paragraphs {
+	spaceWidth := widthFn(" ", fontSize)
+	currentLineIdx := 0
+
+	for para := range strings.SplitSeq(text, "\n") {
 		para = strings.TrimSpace(para)
 		if para == "" {
 			lines = append(lines, "")
+			currentLineIdx++
 			continue
 		}
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			lines = append(lines, "")
-			continue
-		}
+
 		var currentLine string
 		var currentWidth float64
-		spaceWidth := widthFn(" ", fontSize)
-		for _, w := range words {
+		firstWordInPara := true
+
+		for w := range strings.FieldsSeq(para) {
 			wordWidth := widthFn(w, fontSize)
-			if currentLine == "" {
+			targetWidth := lineWidthFn(currentLineIdx)
+			if targetWidth <= 0 {
+				targetWidth = 0.1 // avoid zero or negative widths
+			}
+
+			if firstWordInPara {
 				currentLine = w
 				currentWidth = wordWidth
+				firstWordInPara = false
 				continue
 			}
-			if currentWidth+spaceWidth+wordWidth <= width {
+
+			if currentWidth+spaceWidth+wordWidth <= targetWidth {
 				currentLine += " " + w
 				currentWidth += spaceWidth + wordWidth
 				continue
 			}
+
+			// Current word doesn't fit, finish current line
 			lines = append(lines, currentLine)
+			currentLineIdx++
+
+			// New line for current word
 			currentLine = w
 			currentWidth = wordWidth
+			// Check if word itself exceeds next targetWidth
+			// This could loop if word is wider than any targetWidth,
+			// but we'll just put it on its own line for now.
 		}
 		if currentLine != "" {
 			lines = append(lines, currentLine)
+			currentLineIdx++
 		}
 	}
 	return lines

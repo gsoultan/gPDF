@@ -36,6 +36,11 @@ func ColorFromHex(hex string) (Color, error) {
 // Gray returns a gray with the given intensity in [0,1] (0=black, 1=white).
 func Gray(v float64) Color { return Color{R: v, G: v, B: v} }
 
+// ToRGB returns the color components as a [3]float64 array.
+func (c Color) ToRGB() [3]float64 {
+	return [3]float64{c.R, c.G, c.B}
+}
+
 var (
 	Black     = Color{0, 0, 0}
 	White     = Color{1, 1, 1}

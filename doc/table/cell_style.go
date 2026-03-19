@@ -11,6 +11,16 @@ const (
 	CellVAlignBottom CellVerticalAlign = "bottom"
 )
 
+// CellHorizontalAlign controls horizontal placement of content inside a table cell.
+type CellHorizontalAlign string
+
+const (
+	CellHAlignLeft    CellHorizontalAlign = "left"
+	CellHAlignCenter  CellHorizontalAlign = "center"
+	CellHAlignRight   CellHorizontalAlign = "right"
+	CellHAlignJustify CellHorizontalAlign = "justify"
+)
+
 // CellStyle controls padding and vertical alignment for a table cell.
 // Zero value uses sensible defaults (padding 4pt on all sides, top alignment).
 type CellStyle struct {
@@ -20,8 +30,11 @@ type CellStyle struct {
 	PaddingLeft   float64
 
 	VAlign CellVerticalAlign
+	HAlign CellHorizontalAlign
 
 	TextColorRGB [3]float64
+	TextColor    style.Color
+	HasTextColor bool
 
 	FillColor    style.Color
 	HasFillColor bool

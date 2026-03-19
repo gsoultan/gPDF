@@ -45,6 +45,7 @@ func OpenWithPassword(path string, userPassword string) (Document, error) {
 // Sub-builders are initialized for text, graphics, and image drawing.
 func New() *DocumentBuilder {
 	b := &DocumentBuilder{}
+	b.fc.onWarning = b.logWarning
 	b.textDrawer = bldrtext.NewDrawer(b)
 	b.graphicsDrawer = bldrgfx.NewDrawer()
 	b.imageDrawer = bldrimg.NewDrawer()

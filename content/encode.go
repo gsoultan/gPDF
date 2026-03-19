@@ -92,7 +92,8 @@ func (e *Encoder) writeObject(obj model.Object) error {
 
 func writeLiteralString(w io.Writer, s string) {
 	io.WriteString(w, "(")
-	for _, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		switch c {
 		case '\\', '(', ')':
 			fmt.Fprintf(w, "\\%c", c)
@@ -103,7 +104,7 @@ func writeLiteralString(w io.Writer, s string) {
 		case '\t':
 			io.WriteString(w, "\\t")
 		default:
-			io.WriteString(w, string(c))
+			w.Write([]byte{c})
 		}
 	}
 	io.WriteString(w, ")")
@@ -119,11 +120,12 @@ func writeHexString(w io.Writer, b []byte) {
 
 func escapeContentName(s string) string {
 	var b bytes.Buffer
-	for _, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if c <= ' ' || c >= 127 || c == '#' || c == '/' || c == '(' || c == ')' || c == '<' || c == '>' || c == '[' || c == ']' || c == '%' {
 			fmt.Fprintf(&b, "#%02x", c)
 		} else {
-			b.WriteRune(c)
+			b.WriteByte(c)
 		}
 	}
 	return b.String()

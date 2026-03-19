@@ -47,7 +47,7 @@ func TestTableAdvancedFeatures(t *testing.T) {
 
 	// A very tall row that MUST split
 	longText := "This is a very long text that should span multiple pages. "
-	for range 20 {
+	for range 25 {
 		longText += "We are testing the automatic row splitting feature of the gPDF library. "
 	}
 

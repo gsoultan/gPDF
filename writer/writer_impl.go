@@ -560,11 +560,12 @@ func (pw *PDFWriter) writeString(w io.Writer, s string) {
 
 func escapeName(s string) string {
 	var b bytes.Buffer
-	for _, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if c <= ' ' || c >= 127 || c == '#' || c == '/' || c == '(' || c == ')' || c == '<' || c == '>' || c == '[' || c == ']' || c == '%' {
 			fmt.Fprintf(&b, "#%02x", c)
 		} else {
-			b.WriteRune(c)
+			b.WriteByte(c)
 		}
 	}
 	return b.String()

@@ -2,6 +2,7 @@ package doc
 
 import (
 	"fmt"
+	"os"
 
 	"gpdf/model"
 )
@@ -32,6 +33,8 @@ func (b *DocumentBuilder) Build() (Document, error) {
 
 	// Add shared standard ToUnicode stream if used
 	standardToUnicodeRef := model.Ref{ObjectNumber: 0, Generation: 0}
+	symbolToUnicodeRef := model.Ref{ObjectNumber: 0, Generation: 0}
+	zapfToUnicodeRef := model.Ref{ObjectNumber: 0, Generation: 0}
 	for _, obj := range objs {
 		if pd, ok := obj.(model.Dict); ok {
 			if res, ok := pd[model.Name("Resources")].(model.Dict); ok {
@@ -44,13 +47,36 @@ func (b *DocumentBuilder) Build() (Document, error) {
 							Dict:    model.Dict{model.Name("Length"): model.Integer(len(cmap))},
 							Content: cmap,
 						}
+
+						symbolToUnicodeRef = model.Ref{ObjectNumber: nextNum, Generation: 0}
+						nextNum++
+						scmap := buildToUnicodeSymbolCMap()
+						objs[symbolToUnicodeRef.ObjectNumber] = &model.Stream{
+							Dict:    model.Dict{model.Name("Length"): model.Integer(len(scmap))},
+							Content: scmap,
+						}
+
+						zapfToUnicodeRef = model.Ref{ObjectNumber: nextNum, Generation: 0}
+						nextNum++
+						zcmap := buildToUnicodeZapfDingbatsCMap()
+						objs[zapfToUnicodeRef.ObjectNumber] = &model.Stream{
+							Dict:    model.Dict{model.Name("Length"): model.Integer(len(zcmap))},
+							Content: zcmap,
+						}
 					}
 					delete(res, model.Name("_standardToUnicode"))
 					if fontDict, ok := res[model.Name("Font")].(model.Dict); ok {
 						for _, fontObj := range fontDict {
 							if fd, ok := fontObj.(model.Dict); ok {
 								if subtype, _ := fd[model.Name("Subtype")].(model.Name); subtype == model.Name("Type1") {
-									fd[model.Name("ToUnicode")] = standardToUnicodeRef
+									baseFont, _ := fd[model.Name("BaseFont")].(model.Name)
+									if baseFont == "Symbol" {
+										fd[model.Name("ToUnicode")] = symbolToUnicodeRef
+									} else if baseFont == "ZapfDingbats" {
+										fd[model.Name("ToUnicode")] = zapfToUnicodeRef
+									} else {
+										fd[model.Name("ToUnicode")] = standardToUnicodeRef
+									}
 								}
 							}
 						}
@@ -100,6 +126,26 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	}, nil
 }
 
+// BuildAndSave builds the document and saves it to the specified path.
+func (b *DocumentBuilder) BuildAndSave(path string) error {
+	doc, err := b.Build()
+	if err != nil {
+		return err
+	}
+	defer doc.Close()
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := doc.Save(f); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 // allocatePageNums returns object numbers and refs for all pages.
 func (b *DocumentBuilder) allocatePageNums(startNum int) (pageNums []int, pageRefs model.Array) {
 	pageNums = make([]int, 0, len(b.pc.pages))
@@ -141,7 +187,7 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 				imageStreamNums[i] = nextNum
 				nextNum++
 			}
-			contentBytes, resources, buildErr := b.buildPageContent(&b.pc.pages[idx], 0, imageStreamNums)
+			contentBytes, resources, buildErr := b.buildPageContent(&b.pc.pages[idx], b.pc.height(idx), imageStreamNums)
 			if buildErr != nil {
 				return nextNum, fmt.Errorf("page %d: %w", idx+1, buildErr)
 			}

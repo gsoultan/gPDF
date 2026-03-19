@@ -1,5 +1,7 @@
 package text
 
+import "gpdf/doc/style"
+
 // Align describes horizontal alignment for laid-out text.
 type Align int
 
@@ -18,4 +20,9 @@ type LayoutOptions struct {
 	ParagraphSpacing float64
 	AllowPageBreak   bool
 	LetterSpacing    float64
+	Color            style.Color
+	HasColor         bool
+	IsVertical       bool
+	SyntheticBold    bool
+	SyntheticItalic  bool
 }

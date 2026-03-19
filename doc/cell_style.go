@@ -9,4 +9,9 @@ const (
 	CellVAlignTop    = table.CellVAlignTop
 	CellVAlignMiddle = table.CellVAlignMiddle
 	CellVAlignBottom = table.CellVAlignBottom
+
+	CellHAlignLeft    = table.CellHAlignLeft
+	CellHAlignCenter  = table.CellHAlignCenter
+	CellHAlignRight   = table.CellHAlignRight
+	CellHAlignJustify = table.CellHAlignJustify
 )

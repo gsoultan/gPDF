@@ -37,10 +37,20 @@ type DocumentBuilder struct {
 	imageDrawer    bldrimg.Drawer
 
 	defaultStyle TextStyle
+	warnings     []string
 }
 
 // Err returns the first error recorded during building. Check after Build() or before further fluent calls.
 func (b *DocumentBuilder) Err() error { return b.err }
+
+// Warnings returns all font-related warnings collected during the document building.
+func (b *DocumentBuilder) Warnings() []string {
+	return b.warnings
+}
+
+func (b *DocumentBuilder) logWarning(msg string) {
+	b.warnings = append(b.warnings, msg)
+}
 
 func (b *DocumentBuilder) setErr(err error) {
 	if b.err == nil {
@@ -108,6 +118,16 @@ func (b *DocumentBuilder) RegisterFont(f font.Font) *DocumentBuilder {
 		return b
 	}
 	b.fc.registerFont(f)
+	return b
+}
+
+// RegisterFallbackFont registers a font to be used when the primary font lacks a glyph.
+func (b *DocumentBuilder) RegisterFallbackFont(f font.Font) *DocumentBuilder {
+	if f == nil {
+		return b
+	}
+	b.RegisterFont(f)
+	b.fc.addFallback(f.PostScriptName())
 	return b
 }
 

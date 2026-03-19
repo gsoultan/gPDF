@@ -21,6 +21,13 @@ type Font interface {
 	// Returns 0 if the rune is not mapped in this font.
 	GlyphWidth(r rune) int
 
+	// Contains returns true if the font supports the given rune.
+	Contains(r rune) bool
+
+	// Kern returns the kerning adjustment between two runes in font units.
+	// Positive values move characters further apart; negative values move them closer.
+	Kern(r1, r2 rune) int
+
 	// TextWidth measures the total advance width of text in points at the given fontSize.
 	TextWidth(text string, fontSize float64) float64
 

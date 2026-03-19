@@ -69,8 +69,9 @@ func main() {
 	} else {
 		fmt.Printf("\n=== Images (%d total) ===\n", len(images))
 		for _, img := range images {
-			fmt.Printf("  page=%d name=%-6s %dx%d bpc=%d cs=%-12s filter=%s bytes=%d\n",
+			fmt.Printf("  page=%d name=%-6s %dx%d pos=(%.0f,%.0f) size=(%.0f,%.0f) bpc=%d cs=%-12s filter=%s bytes=%d\n",
 				img.Page, img.Name, img.Width, img.Height,
+				img.X, img.Y, img.WidthPt, img.HeightPt,
 				img.BitsPerComponent, img.ColorSpace, img.Filter, len(img.Data))
 		}
 		if len(images) == 0 {
@@ -87,7 +88,7 @@ func main() {
 		for _, pl := range layouts {
 			fmt.Printf("  page=%d size=%.0fx%.0f blocks=%d\n",
 				pl.Page, pl.Width, pl.Height, len(pl.Blocks))
-			const maxBlocks = 8
+			const maxBlocks = 100
 			shown := 0
 			for _, b := range pl.Blocks {
 				if shown >= maxBlocks {

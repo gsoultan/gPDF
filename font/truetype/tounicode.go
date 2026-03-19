@@ -35,23 +35,67 @@ func (f *Font) ToUnicodeCMap(usedRunes map[rune]uint16) []byte {
 	b.WriteString("<0000> <FFFF>\n")
 	b.WriteString("endcodespacerange\n")
 
-	// Write bfchar entries in batches of 100 (PDF limit per beginbfchar block).
+	// Group contiguous mappings into ranges to use beginbfrange for efficiency.
+	type bfRange struct {
+		startGid uint16
+		endGid   uint16
+		start    rune
+	}
+	var bfranges []bfRange
+	var bfchars []mapping
+
 	for i := 0; i < len(mappings); {
+		startIdx := i
+		// A range must have at least 2 entries.
+		for i+1 < len(mappings) &&
+			mappings[i+1].gid == mappings[i].gid+1 &&
+			mappings[i+1].code == mappings[i].code+1 &&
+			mappings[i+1].code <= 0xFFFF {
+			i++
+		}
+
+		if i > startIdx {
+			bfranges = append(bfranges, bfRange{
+				startGid: mappings[startIdx].gid,
+				endGid:   mappings[i].gid,
+				start:    mappings[startIdx].code,
+			})
+		} else {
+			bfchars = append(bfchars, mappings[i])
+		}
+		i++
+	}
+
+	// Write bfchar entries in batches of 100.
+	for i := 0; i < len(bfchars); {
 		end := i + 100
-		if end > len(mappings) {
-			end = len(mappings)
+		if end > len(bfchars) {
+			end = len(bfchars)
 		}
 		fmt.Fprintf(&b, "%d beginbfchar\n", end-i)
-		for _, m := range mappings[i:end] {
+		for _, m := range bfchars[i:end] {
 			if m.code <= 0xFFFF {
 				fmt.Fprintf(&b, "<%04X> <%04X>\n", m.gid, m.code)
 			} else {
-				// Supplementary plane: encode as UTF-16 surrogate pair.
 				hi, lo := surrogates(m.code)
 				fmt.Fprintf(&b, "<%04X> <%04X%04X>\n", m.gid, hi, lo)
 			}
 		}
 		b.WriteString("endbfchar\n")
+		i = end
+	}
+
+	// Write bfrange entries in batches of 100.
+	for i := 0; i < len(bfranges); {
+		end := i + 100
+		if end > len(bfranges) {
+			end = len(bfranges)
+		}
+		fmt.Fprintf(&b, "%d beginbfrange\n", end-i)
+		for _, r := range bfranges[i:end] {
+			fmt.Fprintf(&b, "<%04X> <%04X> <%04X>\n", r.startGid, r.endGid, r.start)
+		}
+		b.WriteString("endbfrange\n")
 		i = end
 	}
 

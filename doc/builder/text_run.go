@@ -17,6 +17,9 @@ type TextRun struct {
 	LetterSpacing float64
 	WordSpacing   float64
 
+	SyntheticBold   bool
+	SyntheticItalic bool
+
 	MCID    int
 	HasMCID bool
 	Role    model.Name

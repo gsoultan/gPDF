@@ -1,5 +1,11 @@
 package doc
 
+import (
+	"gpdf/doc/image"
+	"gpdf/doc/style"
+	"gpdf/doc/text"
+)
+
 // FlowOptions configures the layout of a flowing content area.
 type FlowOptions struct {
 	Margin float64
@@ -15,6 +21,8 @@ type FlowBuilder struct {
 	opts      FlowOptions
 	pageIndex int
 	currY     float64
+	style     TextStyle
+	align     text.Align
 }
 
 // Flow starts a flowing layout region on the current page.
@@ -80,28 +88,70 @@ func (f *FlowBuilder) Width() float64 {
 	return w - f.Left() - f.Right()
 }
 
+// Font sets the font for subsequent elements in the flow.
+func (f *FlowBuilder) Font(name string) *FlowBuilder {
+	f.style.FontName = name
+	return f
+}
+
+// Size sets the font size for subsequent elements in the flow.
+func (f *FlowBuilder) Size(size float64) *FlowBuilder {
+	f.style.FontSize = size
+	return f
+}
+
+// Color sets the text color for subsequent elements in the flow.
+func (f *FlowBuilder) Color(c Color) *FlowBuilder {
+	f.style.Color = c
+	return f
+}
+
+// Align sets the text alignment for subsequent paragraphs in the flow.
+func (f *FlowBuilder) Align(a TextAlignment) *FlowBuilder {
+	f.align = text.Align(a)
+	return f
+}
+
+func (f *FlowBuilder) getEffectiveStyle() TextStyle {
+	s := f.builder.getEffectiveStyle()
+	if f.style.FontName != "" {
+		s.FontName = f.style.FontName
+	}
+	if f.style.FontSize != 0 {
+		s.FontSize = f.style.FontSize
+	}
+	if f.style.Color != (Color{}) {
+		s.Color = f.style.Color
+	}
+	if f.style.LetterSpacing != 0 {
+		s.LetterSpacing = f.style.LetterSpacing
+	}
+	return s
+}
+
 // Heading adds a heading to the flow.
 func (f *FlowBuilder) Heading(text string, level int) *FlowBuilder {
-	fontSize := 0.0
-	switch level {
-	case 1:
-		fontSize = 24
-	case 2:
-		fontSize = 18
-	case 3:
-		fontSize = 14
+	style := f.getEffectiveStyle()
+	fontSize := style.FontSize
+	if f.style.FontSize == 0 {
+		switch level {
+		case 1:
+			fontSize = 24
+		case 2:
+			fontSize = 18
+		case 3:
+			fontSize = 14
+		default:
+			fontSize = 12
+		}
 	}
 
 	h := fontSize * 1.5
-	if h <= 0 {
-		h = 18
-	}
-
 	if f.currY-h < f.Bottom() {
 		f.newPage()
 	}
 
-	f.builder.DrawHeading(f.pageIndex, level, text, f.Left(), f.currY, "", fontSize)
+	f.builder.DrawHeadingColored(f.pageIndex, level, text, f.Left(), f.currY, style.FontName, fontSize, style.Color)
 	f.currY -= h
 	f.syncCursor()
 	return f
@@ -109,7 +159,7 @@ func (f *FlowBuilder) Heading(text string, level int) *FlowBuilder {
 
 // Paragraph adds a wrapping paragraph to the flow.
 func (f *FlowBuilder) Paragraph(text string) *FlowBuilder {
-	style := f.builder.getEffectiveStyle()
+	style := f.getEffectiveStyle()
 	if style.FontSize <= 0 {
 		style.FontSize = 12
 	}
@@ -120,6 +170,9 @@ func (f *FlowBuilder) Paragraph(text string) *FlowBuilder {
 	opts := TextLayoutOptions{
 		Width:          f.Width(),
 		AllowPageBreak: true,
+		Color:          style.Color,
+		HasColor:       style.Color != (Color{}),
+		Align:          f.align,
 	}
 
 	f.pageIndex, f.currY = f.builder.layoutTextIntoPages(f.pageIndex, text, f.Left(), f.currY, style.FontName, style.FontSize, opts, false, "")
@@ -139,7 +192,23 @@ func (f *FlowBuilder) Image(data []byte, w, h float64) *FlowBuilder {
 	if f.currY-h < f.Bottom() {
 		f.newPage()
 	}
-	f.builder.DrawImage(f.Left(), f.currY-h, w, h, data, 0, 0, 8, "DeviceRGB")
+
+	info, err := image.ProcessImage(data)
+	if err != nil {
+		return f
+	}
+
+	f.builder.DrawImage(f.Left(), f.currY-h, w, h, info.Raw, info.WidthPx, info.HeightPx, info.BitsPerComponent, info.ColorSpace)
+	if info.IsJPEG {
+		idx := f.pageIndex
+		if idx >= 0 && idx < len(f.builder.pc.pages) {
+			runs := f.builder.pc.pages[idx].ImageRuns
+			if len(runs) > 0 {
+				runs[len(runs)-1].IsJPEG = true
+				f.builder.pc.pages[idx].ImageRuns = runs
+			}
+		}
+	}
 	f.currY -= h
 	f.syncCursor()
 	return f
@@ -147,13 +216,22 @@ func (f *FlowBuilder) Image(data []byte, w, h float64) *FlowBuilder {
 
 // List adds a list of items to the flow.
 func (f *FlowBuilder) List(items []string, ordered bool) *FlowBuilder {
-	style := f.builder.getEffectiveStyle()
-	lineHeight := style.FontSize * 1.25
+	s := f.getEffectiveStyle()
+	lineHeight := s.FontSize * 1.25
 	h := float64(len(items)) * lineHeight
 	if f.currY-h < f.Bottom() {
 		f.newPage()
 	}
-	f.builder.DrawList(f.pageIndex, items, f.Left(), f.currY, lineHeight, ordered, style.FontName, style.FontSize)
+
+	ls := style.DefaultListStyle()
+	ls.FontName = s.FontName
+	ls.FontSize = s.FontSize
+	ls.Color = s.Color
+	if ordered {
+		ls.Marker = style.ListMarkerDecimal
+	}
+
+	f.builder.DrawListEnhanced(f.pageIndex, items, f.Left(), f.currY, lineHeight, ls)
 	f.currY -= h
 	f.syncCursor()
 	return f
@@ -163,6 +241,12 @@ func (f *FlowBuilder) List(items []string, ordered bool) *FlowBuilder {
 func (f *FlowBuilder) Line(width float64, c Color) *FlowBuilder {
 	if f.currY-10 < f.Bottom() {
 		f.newPage()
+	}
+	if c == (Color{}) {
+		c = f.style.Color
+		if c == (Color{}) {
+			c = ColorBlack
+		}
 	}
 	f.builder.DrawLine(f.pageIndex, f.Left(), f.currY-5, f.Left()+f.Width(), f.currY-5, LineStyle{Width: width, Color: c})
 	f.currY -= 10

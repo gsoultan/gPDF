@@ -2,9 +2,12 @@ package doc
 
 import (
 	"fmt"
+	"strings"
 
+	"gpdf/doc/style"
 	taggedpkg "gpdf/doc/tagged"
 	"gpdf/doc/text"
+	"gpdf/font"
 	"gpdf/model"
 )
 
@@ -102,7 +105,7 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 			currentY = b.pageHeight(currentPage) - marginBottom
 		}
 
-		lineWidth := b.textWidth(line, fontSize, fontName)
+		lineWidth := b.textWidthStyle(line, fontSize, fontName, opts.LetterSpacing, 0)
 		offsetX := x
 		wordSpacing := 0.0
 		free := opts.Width - lineWidth
@@ -123,25 +126,64 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 				numSpaces := countWordSpaces(line)
 				if numSpaces > 0 {
 					wordSpacing = free / float64(numSpaces)
+					// Recalculate width with the new word spacing for exact alignment
+					lineWidth = b.textWidthStyle(line, fontSize, fontName, opts.LetterSpacing, wordSpacing)
+					free = opts.Width - lineWidth
 				}
 			}
 		}
 
 		targetPage := &b.pc.pages[currentPage]
-		r := textRun{
-			Text:        line,
-			X:           offsetX,
-			Y:           currentY,
-			FontName:    fontName,
-			FontSize:    fontSize,
-			WordSpacing: wordSpacing,
+		segments := b.fc.resolveFont(line, fontName)
+		currentX := offsetX
+		for _, seg := range segments {
+			if opts.IsVertical {
+				for _, r := range seg.text {
+					charStr := string(r)
+					b.pc.pages[currentPage].TextRuns = append(b.pc.pages[currentPage].TextRuns, textRun{
+						Text:     charStr,
+						X:        currentX,
+						Y:        currentY,
+						FontName: seg.fontName,
+						FontSize: fontSize,
+					})
+					currentY -= fontSize * 1.0 // Simple vertical spacing
+				}
+				continue
+			}
+
+			textToDraw := seg.text
+			if seg.isRTL {
+				textToDraw = reverseRunes(textToDraw)
+			}
+			segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, opts.LetterSpacing, 0)
+			numSpaces := countWordSpaces(seg.text)
+
+			r := textRun{
+				Text:            textToDraw,
+				X:               currentX,
+				Y:               currentY,
+				FontName:        seg.fontName,
+				FontSize:        fontSize,
+				WordSpacing:     wordSpacing,
+				LetterSpacing:   opts.LetterSpacing,
+				SyntheticBold:   opts.SyntheticBold,
+				SyntheticItalic: opts.SyntheticItalic,
+			}
+			if opts.HasColor {
+				r.TextColorRGB = [3]float64{opts.Color.R, opts.Color.G, opts.Color.B}
+				r.UseDefaultColor = false
+			}
+			if isTagged {
+				r.MCID = mcid
+				r.HasMCID = true
+				if !opts.HasColor {
+					r.UseDefaultColor = true
+				}
+			}
+			targetPage.TextRuns = append(targetPage.TextRuns, r)
+			currentX += segWidth + float64(numSpaces)*wordSpacing
 		}
-		if isTagged {
-			r.MCID = mcid
-			r.HasMCID = true
-			r.UseDefaultColor = true
-		}
-		targetPage.TextRuns = append(targetPage.TextRuns, r)
 		currentY -= opts.LineHeight
 	}
 
@@ -168,43 +210,105 @@ func (b *DocumentBuilder) wrapTextLines(s string, fontSize, width float64, fontN
 	return text.WrapLines(s, fontSize, width, widthFn)
 }
 
+// wrapTextLinesDynamic splits text into lines that can have different widths.
+func (b *DocumentBuilder) wrapTextLinesDynamic(s string, fontSize float64, fontName string, lineWidthFn text.LineWidthFunc) []string {
+	widthFn := b.fontWidthFunc(fontName)
+	return text.WrapLinesDynamic(s, fontSize, widthFn, lineWidthFn)
+}
+
 // fontWidthFunc returns a FontWidthFunc that uses registered font metrics or the fallback heuristic.
 func (b *DocumentBuilder) fontWidthFunc(fontName string) text.FontWidthFunc {
-	if f, ok := b.fc.fonts[fontName]; ok {
-		return func(s string, fontSize float64) float64 {
-			return f.TextWidth(s, fontSize)
-		}
-	}
 	return func(s string, fontSize float64) float64 {
-		return text.ApproxWidth(s, fontSize)
+		return b.textWidthStyle(s, fontSize, fontName, 0, 0)
 	}
 }
 
 // textWidth returns the width of text in points.
 // Uses real glyph widths from a registered font when available, otherwise falls back to a heuristic.
 func (b *DocumentBuilder) textWidth(s string, fontSize float64, fontName string) float64 {
+	return b.textWidthStyle(s, fontSize, fontName, 0, 0)
+}
+
+func (b *DocumentBuilder) textWidthStyle(s string, fontSize float64, fontName string, charSpacing, wordSpacing float64) float64 {
 	if s == "" || fontSize <= 0 {
 		return 0
 	}
-	if f, ok := b.fc.fonts[fontName]; ok {
-		return f.TextWidth(s, fontSize)
+	var w float64
+
+	// Optimization: if it's a known font and no fallbacks would trigger, avoid resolveFont.
+	// We can check if the string contains any non-ASCII characters that might trigger fallback.
+	// But to be safe and simple, let's just check if we have any fallbacks at all.
+	if len(b.fc.fallbackChain) == 0 && len(b.fc.blockFallbacks) == 0 {
+		if f, ok := b.fc.fonts[fontName]; ok {
+			w = f.TextWidth(s, fontSize)
+		} else {
+			w = b.standardOrApproxWidth(s, fontSize, fontName)
+		}
+	} else {
+		segments := b.fc.resolveFont(s, fontName)
+		for _, seg := range segments {
+			if f, ok := b.fc.fonts[seg.fontName]; ok {
+				w += f.TextWidth(seg.text, fontSize)
+			} else {
+				w += b.standardOrApproxWidth(seg.text, fontSize, seg.fontName)
+			}
+		}
+	}
+
+	if charSpacing != 0 {
+		w += float64(len([]rune(s))-1) * charSpacing
+	}
+	if wordSpacing != 0 {
+		w += float64(countWordSpaces(s)) * wordSpacing
+	}
+	return w
+}
+
+func (b *DocumentBuilder) standardOrApproxWidth(s string, fontSize float64, fontName string) float64 {
+	var w int
+	allFound := true
+	for _, r := range s {
+		width := font.GetStandardWidth(fontName, r)
+		if width == 0 && r != ' ' { // space might be 0 in some fonts but we checked GetStandardWidth
+			allFound = false
+			break
+		}
+		w += width
+	}
+
+	if allFound && len(s) > 0 {
+		return float64(w) * fontSize / 1000.0
 	}
 	return text.ApproxWidth(s, fontSize)
+}
+
+// DrawRichText renders styled rich text on the given page starting at (x, y).
+// It automatically calculates the horizontal position for each segment.
+func (b *DocumentBuilder) DrawRichText(pageIndex int, rt *RichText, x, y float64) *DocumentBuilder {
+	if rt == nil || !b.pc.validPageIndex(pageIndex) {
+		return b
+	}
+	currentX := x
+	for _, seg := range rt.Segments {
+		b.drawTextColoredAt(pageIndex, seg.Text, currentX, y, seg.Style.FontName, seg.Style.FontSize, seg.Style.Color, seg.Style.LetterSpacing)
+		currentX += b.textWidthStyle(seg.Text, seg.Style.FontSize, seg.Style.FontName, seg.Style.LetterSpacing, 0)
+	}
+	return b
 }
 
 // DrawText queues text to be drawn on the last added page at (x, y) using the given font and size.
 // FontName should be a standard PDF base font (e.g. Helvetica, Times-Roman). Call after AddPage().
 func (b *DocumentBuilder) DrawText(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, ColorBlack)
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, ColorBlack, 0)
 }
 
 // DrawTextColored queues text drawn in the specified RGB color on the last added page.
 // It behaves like DrawText but sets the fill color for that run.
 func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
-	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, color)
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, color, 0)
 }
 
-func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing float64) *DocumentBuilder {
 	if !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
@@ -214,31 +318,29 @@ func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y 
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
-		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
-		TextColorRGB: [3]float64{color.R, color.G, color.B},
-	})
+
+	segments := b.fc.resolveFont(textStr, fontName)
+	currentX := x
+	for _, seg := range segments {
+		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, 0)
+		b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
+			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			TextColorRGB:  [3]float64{color.R, color.G, color.B},
+			LetterSpacing: letterSpacing,
+		})
+		currentX += segWidth
+	}
 	return b
 }
 
 // DrawTextCentered draws text horizontally centered around the point (cx, y).
 // The text baseline is at y; cx is the horizontal center of the rendered text.
 func (b *DocumentBuilder) DrawTextCentered(textStr string, cx, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if len(b.pc.pages) == 0 {
-		return b
-	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
-	w := b.textWidth(textStr, fontSize, fontName)
-	return b.DrawText(textStr, cx-w/2, y, fontName, fontSize)
+	return b.DrawTextCenteredColored(textStr, cx, y, fontName, fontSize, ColorBlack, 0)
 }
 
 // DrawTextCenteredColored draws colored text horizontally centered around the point (cx, y).
-func (b *DocumentBuilder) DrawTextCenteredColored(textStr string, cx, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+func (b *DocumentBuilder) DrawTextCenteredColored(textStr string, cx, y float64, fontName string, fontSize float64, color Color, letterSpacing float64) *DocumentBuilder {
 	if len(b.pc.pages) == 0 {
 		return b
 	}
@@ -248,27 +350,17 @@ func (b *DocumentBuilder) DrawTextCenteredColored(textStr string, cx, y float64,
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	w := b.textWidth(textStr, fontSize, fontName)
-	return b.DrawTextColored(textStr, cx-w/2, y, fontName, fontSize, color)
+	w := b.textWidthStyle(textStr, fontSize, fontName, letterSpacing, 0)
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, cx-w/2, y, fontName, fontSize, color, letterSpacing)
 }
 
 // DrawTextRight draws text right-aligned so that its right edge is at x.
 func (b *DocumentBuilder) DrawTextRight(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if len(b.pc.pages) == 0 {
-		return b
-	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
-	w := b.textWidth(textStr, fontSize, fontName)
-	return b.DrawText(textStr, x-w, y, fontName, fontSize)
+	return b.DrawTextRightColored(textStr, x, y, fontName, fontSize, ColorBlack, 0)
 }
 
 // DrawTextRightColored draws colored text right-aligned so that its right edge is at x.
-func (b *DocumentBuilder) DrawTextRightColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+func (b *DocumentBuilder) DrawTextRightColored(textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing float64) *DocumentBuilder {
 	if len(b.pc.pages) == 0 {
 		return b
 	}
@@ -278,8 +370,8 @@ func (b *DocumentBuilder) DrawTextRightColored(textStr string, x, y float64, fon
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	w := b.textWidth(textStr, fontSize, fontName)
-	return b.DrawTextColored(textStr, x-w, y, fontName, fontSize, color)
+	w := b.textWidthStyle(textStr, fontSize, fontName, letterSpacing, 0)
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x-w, y, fontName, fontSize, color, letterSpacing)
 }
 
 // DrawTextWithUnderline draws text with an underline on the last added page.
@@ -501,6 +593,11 @@ func (b *DocumentBuilder) DrawTaggedCodeBlock(pageIndex int, textStr string, x, 
 // DrawHeading queues a tagged heading (/H1..H6) on the given page at (x, y).
 // Level must be in [1,6]; values outside this range are clamped.
 func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
+	return b.DrawHeadingColored(pageIndex, level, textStr, x, y, fontName, fontSize, ColorBlack)
+}
+
+// DrawHeadingColored behaves like DrawHeading but sets the text color.
+func (b *DocumentBuilder) DrawHeadingColored(pageIndex int, level int, textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
 	if textStr == "" || !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
@@ -535,9 +632,10 @@ func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, 
 		Y:               y,
 		FontName:        fontName,
 		FontSize:        fontSize,
+		TextColorRGB:    [3]float64{color.R, color.G, color.B},
 		MCID:            mcid,
 		HasMCID:         true,
-		UseDefaultColor: true,
+		UseDefaultColor: color == ColorBlack,
 	})
 	role := model.Name(fmt.Sprintf("H%d", level))
 	b.tagging.Blocks = append(b.tagging.Blocks, taggedpkg.Block{
@@ -553,52 +651,132 @@ func (b *DocumentBuilder) DrawHeading(pageIndex int, level int, textStr string, 
 // Items are rendered vertically starting at (x, y) with the given lineHeight (or a default when <= 0).
 // When ordered is true, items are prefixed with "1. ", "2. ", ...; otherwise a bullet "• " is used.
 func (b *DocumentBuilder) DrawList(pageIndex int, items []string, x, y, lineHeight float64, ordered bool, fontName string, fontSize float64) *DocumentBuilder {
+	ls := style.DefaultListStyle()
+	ls.FontName = fontName
+	ls.FontSize = fontSize
+	if ordered {
+		ls.Marker = style.ListMarkerDecimal
+	}
+	return b.DrawListEnhanced(pageIndex, items, x, y, lineHeight, ls)
+}
+
+// DrawListEnhanced renders a list with advanced styling options.
+func (b *DocumentBuilder) DrawListEnhanced(pageIndex int, items []string, x, y, lineHeight float64, ls style.ListStyle) *DocumentBuilder {
 	if !b.pc.validPageIndex(pageIndex) || len(items) == 0 {
 		return b
 	}
-	if fontName == "" {
-		fontName = "Helvetica"
+	if ls.FontName == "" {
+		ls.FontName = "Helvetica"
 	}
-	if fontSize <= 0 {
-		fontSize = 12
+	if ls.FontSize <= 0 {
+		ls.FontSize = 12
 	}
 	if lineHeight <= 0 {
-		lineHeight = fontSize * 1.2
+		lineHeight = ls.FontSize * 1.2
 	}
+
 	ps := &b.pc.pages[pageIndex]
 	var listItems []taggedpkg.ListItem
+
 	for idx, raw := range items {
 		if raw == "" {
 			continue
 		}
-		label := "\u2022 "
-		if ordered {
-			label = fmt.Sprintf("%d. ", idx+1)
-		}
-		itemText := label + raw
+
+		markerText, markerFont := b.getMarkerText(ls, idx)
 		itemY := y - float64(len(listItems))*lineHeight
-		mcid := ps.NextMCID
+
+		markerFontSize := ls.MarkerFontSize
+		if markerFontSize <= 0 {
+			markerFontSize = ls.FontSize
+		}
+
+		// Draw Marker
+		mcidMarker := ps.NextMCID
 		ps.NextMCID++
 		ps.TextRuns = append(ps.TextRuns, textRun{
-			Text:            itemText,
-			X:               x,
+			Text:            markerText,
+			X:               x + float64(ls.Level)*ls.Indent,
 			Y:               itemY,
-			FontName:        fontName,
-			FontSize:        fontSize,
-			MCID:            mcid,
+			FontName:        markerFont,
+			FontSize:        markerFontSize,
+			TextColorRGB:    ls.Color.ToRGB(),
+			UseDefaultColor: ls.Color == style.Black,
+			MCID:            mcidMarker,
 			HasMCID:         true,
-			UseDefaultColor: true,
 		})
-		listItems = append(listItems, taggedpkg.ListItem{MCID: mcid})
+
+		// Draw Item Text
+		mcidText := ps.NextMCID
+		ps.NextMCID++
+		ps.TextRuns = append(ps.TextRuns, textRun{
+			Text:            raw,
+			X:               x + float64(ls.Level)*ls.Indent + ls.MarkerOffset,
+			Y:               itemY,
+			FontName:        ls.FontName,
+			FontSize:        ls.FontSize,
+			TextColorRGB:    ls.Color.ToRGB(),
+			UseDefaultColor: ls.Color == style.Black,
+			MCID:            mcidText,
+			HasMCID:         true,
+		})
+
+		listItems = append(listItems, taggedpkg.ListItem{MCID: mcidText}) // Simplification: only track text
 	}
-	if len(listItems) == 0 {
-		return b
+
+	if len(listItems) > 0 {
+		b.tagging.Lists = append(b.tagging.Lists, taggedpkg.List{
+			PageIndex: pageIndex,
+			Ordered:   ls.Marker == style.ListMarkerDecimal,
+			Items:     listItems,
+		})
+		b.tagging.RecordSectionList(len(b.tagging.Lists) - 1)
 	}
-	b.tagging.Lists = append(b.tagging.Lists, taggedpkg.List{
-		PageIndex: pageIndex,
-		Ordered:   ordered,
-		Items:     listItems,
-	})
-	b.tagging.RecordSectionList(len(b.tagging.Lists) - 1)
+
 	return b
+}
+
+func (b *DocumentBuilder) getMarkerText(ls style.ListStyle, index int) (string, string) {
+	switch ls.Marker {
+	case style.ListMarkerDisc:
+		return "\u2022", "Symbol"
+	case style.ListMarkerCircle:
+		return "o", "Helvetica"
+	case style.ListMarkerSquare:
+		return "\u25a0", "ZapfDingbats"
+	case style.ListMarkerDecimal:
+		return fmt.Sprintf("%d.", index+1), ls.FontName
+	case style.ListMarkerRomanUpper:
+		return toRoman(index+1) + ".", ls.FontName
+	case style.ListMarkerAlphaUpper:
+		return string(rune('A'+(index%26))) + ".", ls.FontName
+	case style.ListMarkerCustom:
+		return ls.CustomMarker, ls.FontName
+	default:
+		return "\u2022", "Helvetica"
+	}
+}
+
+func toRoman(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	var res strings.Builder
+	vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+	syms := []string{"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"}
+	for i, v := range vals {
+		for n >= v {
+			res.WriteString(syms[i])
+			n -= v
+		}
+	}
+	return res.String()
+}
+
+func reverseRunes(s string) string {
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	return string(runes)
 }

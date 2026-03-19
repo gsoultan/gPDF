@@ -85,19 +85,81 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 		}
 
 		var textArg model.Object
+		useTJ := false
 		if eu, ok := ef[baseName]; ok {
 			eu.markText(r.Text)
-			textArg = model.HexString(eu.font.Encode(r.Text))
+			runes := []rune(r.Text)
+			scale := 1000.0 / float64(eu.font.UnitsPerEm())
+			var tjArray model.Array
+			var currentStr strings.Builder
+			var lastR rune
+			hasKern := false
+
+			for i, currR := range runes {
+				if i > 0 {
+					k := eu.font.Kern(lastR, currR)
+					if k != 0 {
+						if currentStr.Len() > 0 {
+							tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
+							currentStr.Reset()
+						}
+						// TJ displacement: positive moves left, negative moves right.
+						// Font kern: negative moves closer (right for left char).
+						// So -kern * scale.
+						tjArray = append(tjArray, model.Real(-float64(k)*scale))
+						hasKern = true
+					}
+				}
+				currentStr.WriteRune(currR)
+				lastR = currR
+			}
+
+			if hasKern {
+				if currentStr.Len() > 0 {
+					tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
+				}
+				textArg = tjArray
+				useTJ = true
+			} else {
+				textArg = model.HexString(eu.font.Encode(r.Text))
+			}
+		} else if r.FontName == "Symbol" {
+			textArg = model.String(symbolEncode(r.Text))
+		} else if r.FontName == "ZapfDingbats" {
+			textArg = model.String(zapfDingbatsEncode(r.Text))
 		} else {
-			// Basic UTF-8 to WinAnsi conversion for common characters like bullet point.
-			// This avoids (â€) encoding issues when using standard fonts.
 			textArg = model.String(winAnsiEncode(r.Text))
 		}
 
 		btOps := []content.Op{
 			{Name: "BT", Args: nil},
-			{Name: "Tf", Args: []model.Object{resName, model.Real(size)}},
 		}
+
+		if r.SyntheticItalic {
+			btOps = append(btOps, content.Op{
+				Name: "Tm",
+				Args: []model.Object{
+					model.Real(1), model.Real(0),
+					model.Real(0.33), model.Real(1),
+					model.Real(r.X), model.Real(r.Y),
+				},
+			})
+		} else {
+			btOps = append(btOps, content.Op{
+				Name: "Td",
+				Args: []model.Object{model.Real(r.X), model.Real(r.Y)},
+			})
+		}
+
+		btOps = append(btOps, content.Op{Name: "Tf", Args: []model.Object{resName, model.Real(size)}})
+
+		if r.SyntheticBold {
+			btOps = append(btOps,
+				content.Op{Name: "Tr", Args: []model.Object{model.Integer(2)}}, // Fill then stroke
+				content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}},
+			)
+		}
+
 		if r.LetterSpacing != 0 {
 			btOps = append(btOps, content.Op{
 				Name: "Tc",
@@ -110,9 +172,12 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 				Args: []model.Object{model.Real(r.WordSpacing)},
 			})
 		}
+		opName := "Tj"
+		if useTJ {
+			opName = "TJ"
+		}
 		btOps = append(btOps,
-			content.Op{Name: "Td", Args: []model.Object{model.Real(r.X), model.Real(r.Y)}},
-			content.Op{Name: "Tj", Args: []model.Object{textArg}},
+			content.Op{Name: opName, Args: []model.Object{textArg}},
 			content.Op{Name: "ET", Args: nil},
 		)
 		ops = append(ops, btOps...)
@@ -280,12 +345,15 @@ func (b *DocumentBuilder) buildPageContent(page *pageSpec, pageHeight float64, i
 					model.Name("_embedded"): model.Name(base),
 				}
 			} else {
-				fontDict[resName] = model.Dict{
+				dict := model.Dict{
 					model.Name("Type"):     model.Name("Font"),
 					model.Name("Subtype"):  model.Name("Type1"),
 					model.Name("BaseFont"): model.Name(base),
-					model.Name("Encoding"): model.Name("WinAnsiEncoding"),
 				}
+				if base != "Symbol" && base != "ZapfDingbats" {
+					dict[model.Name("Encoding")] = model.Name("WinAnsiEncoding")
+				}
+				fontDict[resName] = dict
 				hasStandardFont = true
 			}
 		}
@@ -416,37 +484,107 @@ func winAnsiEncode(s string) string {
 	return out.String()
 }
 
-func buildToUnicodeWinAnsiCMap() []byte {
+func symbolEncode(s string) string {
+	var out strings.Builder
+	for _, r := range s {
+		switch {
+		case r < 128:
+			out.WriteByte(byte(r))
+		case r == '\u221e': // Infinity
+			out.WriteByte(0xa5)
+		case r == '\u2022' || r == '\u22c5' || r == '\u2219' || r == '\u00b7': // Bullet / Middle Dot / Dot Operator
+			out.WriteByte(0xb7) // middle dot in Symbol is 0xb7, used as bullet
+		case r == '\u20ac': // Euro
+			out.WriteByte(0xa0) // Symbol font doesn't really have Euro in standard, but some versions use 0xa0
+		case r == '\u2212': // Minus
+			out.WriteByte(0x2d) // Or 0xad? 0x2d is hyphen but looks like minus in Symbol
+		default:
+			// Minimal mapping for common symbols
+			out.WriteByte('?')
+		}
+	}
+	return out.String()
+}
+
+func zapfDingbatsEncode(s string) string {
+	var out strings.Builder
+	for _, r := range s {
+		switch {
+		case r < 128:
+			out.WriteByte(byte(r))
+		case r == '\u25cf' || r == '\u2022': // Solid circle
+			out.WriteByte(0x6c)
+		case r == '\u25a0': // Solid square
+			out.WriteByte(0x6d)
+		case r == '\u25cb' || r == 'o': // Open circle (approximate with 0x6d or something else if better)
+			out.WriteByte(0x6d) // Still solid, maybe find an open one
+		case r == '\u2713': // Checkmark
+			out.WriteByte(0x34)
+		case r == '\u2714': // Heavy checkmark
+			out.WriteByte(0x35)
+		case r == '\u2702': // Scissors
+			out.WriteByte(0x22)
+		case r == '\u2709': // Envelope
+			out.WriteByte(0x29)
+		case r == '\u260e': // Telephone
+			out.WriteByte(0x28)
+		default:
+			out.WriteByte('?')
+		}
+	}
+	return out.String()
+}
+
+func buildToUnicodeCMap(name string, special map[byte]rune) []byte {
 	var b strings.Builder
 	b.WriteString("/CIDInit /ProcSet findresource begin\n")
 	b.WriteString("12 dict begin\n")
 	b.WriteString("begincmap\n")
 	b.WriteString("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n")
-	b.WriteString("/CMapName /Adobe-Identity-UCS def\n")
+	fmt.Fprintf(&b, "/CMapName /Adobe-Identity-%s-UCS def\n", name)
 	b.WriteString("/CMapType 2 def\n")
 	b.WriteString("1 begincodespacerange\n")
 	b.WriteString("<00> <FF>\n")
 	b.WriteString("endcodespacerange\n")
 
-	special := map[byte]rune{
+	if len(special) > 0 {
+		fmt.Fprintf(&b, "%d beginbfchar\n", len(special))
+		keys := slices.Sorted(maps.Keys(special))
+		for _, k := range keys {
+			fmt.Fprintf(&b, "<%02X> <%04X>\n", k, special[k])
+		}
+		b.WriteString("endbfchar\n")
+	}
+
+	b.WriteString("endcmap\n")
+	b.WriteString("CMapName currentdict /CMap defineresource pop\n")
+	b.WriteString("end\nend\n")
+	return []byte(b.String())
+}
+
+func buildToUnicodeSymbolCMap() []byte {
+	return buildToUnicodeCMap("Symbol", map[byte]rune{
+		0xa5: '\u221e', // Infinity
+		0xb7: '\u2022', // Bullet
+	})
+}
+
+func buildToUnicodeZapfDingbatsCMap() []byte {
+	return buildToUnicodeCMap("ZapfDingbats", map[byte]rune{
+		0x6c: '\u25cf', // Solid circle (often used for bullet)
+		0x6d: '\u25a0', // Solid square
+		0x34: '\u2713', // Checkmark
+		0x35: '\u2714', // Heavy checkmark
+	})
+}
+
+func buildToUnicodeWinAnsiCMap() []byte {
+	return buildToUnicodeCMap("WinAnsi", map[byte]rune{
 		0x80: '\u20ac', 0x82: '\u201a', 0x83: '\u0192', 0x84: '\u201e', 0x85: '\u2026',
 		0x86: '\u2020', 0x87: '\u2021', 0x88: '\u02c6', 0x89: '\u2030', 0x8a: '\u0160',
 		0x8b: '\u2039', 0x8c: '\u0152', 0x8e: '\u017d', 0x91: '\u2018', 0x92: '\u2019',
 		0x93: '\u201c', 0x94: '\u201d', 0x95: '\u2022', 0x96: '\u2013', 0x97: '\u2014',
 		0x98: '\u02dc', 0x99: '\u2122', 0x9a: '\u0161', 0x9b: '\u203a', 0x9c: '\u0153',
 		0x9e: '\u017e', 0x9f: '\u0178',
-	}
-
-	fmt.Fprintf(&b, "%d beginbfchar\n", len(special))
-	keys := slices.Collect(maps.Keys(special))
-	slices.Sort(keys)
-	for _, k := range keys {
-		fmt.Fprintf(&b, "<%02X> <%04X>\n", k, special[k])
-	}
-	b.WriteString("endbfchar\n")
-
-	b.WriteString("endcmap\n")
-	b.WriteString("CMapName currentdict /CMap defineresource pop\n")
-	b.WriteString("end\nend\n")
-	return []byte(b.String())
+	})
 }

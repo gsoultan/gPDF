@@ -174,14 +174,14 @@ func TestDrawJPEGRotated(t *testing.T) {
 func TestDrawTextCentered(t *testing.T) {
 	b := buildOnePagePDF(t).
 		DrawTextCentered("Hello Center", 297, 700, "Helvetica", 14).
-		DrawTextCenteredColored("Colored Center", 297, 680, "Helvetica", 12, doc.ColorRed)
+		DrawTextCenteredColored("Colored Center", 297, 680, "Helvetica", 12, doc.ColorRed, 0)
 	mustBuild(t, b)
 }
 
 func TestDrawTextRight(t *testing.T) {
 	b := buildOnePagePDF(t).
 		DrawTextRight("Right aligned", 580, 700, "Helvetica", 12).
-		DrawTextRightColored("Right colored", 580, 680, "Helvetica-Bold", 12, doc.ColorBlue)
+		DrawTextRightColored("Right colored", 580, 680, "Helvetica-Bold", 12, doc.ColorBlue, 0)
 	mustBuild(t, b)
 }
 

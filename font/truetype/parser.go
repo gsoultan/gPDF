@@ -13,12 +13,17 @@ type tableRecord struct {
 	checksum uint32
 }
 
-// Parse reads a TrueType (.ttf) font from raw bytes and returns a Font.
+// Parse reads a TrueType (.ttf) or OpenType (.otf) font from raw bytes and returns a Font.
 // It extracts glyph metrics, character-to-glyph mappings, and naming information.
 func Parse(data []byte) (*Font, error) {
 	if len(data) < 12 {
 		return nil, fmt.Errorf("truetype: data too short for offset table")
 	}
+	scaler := binary.BigEndian.Uint32(data[0:4])
+	if scaler == 0x74746366 { // 'ttcf'
+		return nil, fmt.Errorf("truetype: use ParseCollection for .ttc files")
+	}
+
 	numTables := int(binary.BigEndian.Uint16(data[4:6]))
 	if len(data) < 12+numTables*16 {
 		return nil, fmt.Errorf("truetype: data too short for table directory")
@@ -38,6 +43,62 @@ func Parse(data []byte) (*Font, error) {
 		raw:    data,
 		tables: tables,
 	}
+	return f.initialize()
+}
+
+// ParseCollection reads a TrueType Collection (.ttc) font and returns all individual fonts.
+func ParseCollection(data []byte) ([]*Font, error) {
+	if len(data) < 12 {
+		return nil, fmt.Errorf("truetype: data too short for collection header")
+	}
+	if string(data[0:4]) != "ttcf" {
+		return nil, fmt.Errorf("truetype: not a font collection")
+	}
+	numFonts := int(binary.BigEndian.Uint32(data[8:12]))
+	if len(data) < 12+numFonts*4 {
+		return nil, fmt.Errorf("truetype: data too short for collection offset table")
+	}
+
+	var fonts []*Font
+	for i := range numFonts {
+		offset := binary.BigEndian.Uint32(data[12+i*4 : 16+i*4])
+		f, err := parseAtOffset(data, offset)
+		if err != nil {
+			return nil, fmt.Errorf("truetype: font %d in collection: %w", i, err)
+		}
+		fonts = append(fonts, f)
+	}
+	return fonts, nil
+}
+
+func parseAtOffset(data []byte, start uint32) (*Font, error) {
+	if int(start+12) > len(data) {
+		return nil, fmt.Errorf("truetype: offset out of bounds")
+	}
+	numTables := int(binary.BigEndian.Uint16(data[start+4 : start+6]))
+	if int(start+12+uint32(numTables)*16) > len(data) {
+		return nil, fmt.Errorf("truetype: table directory out of bounds")
+	}
+
+	tables := make(map[string]tableRecord, numTables)
+	for i := range numTables {
+		off := start + 12 + uint32(i)*16
+		tag := string(data[off : off+4])
+		tables[tag] = tableRecord{
+			tag:      tag,
+			checksum: binary.BigEndian.Uint32(data[off+4 : off+8]),
+			offset:   binary.BigEndian.Uint32(data[off+8 : off+12]),
+			length:   binary.BigEndian.Uint32(data[off+12 : off+16]),
+		}
+	}
+	f := &Font{
+		raw:    data,
+		tables: tables,
+	}
+	return f.initialize()
+}
+
+func (f *Font) initialize() (*Font, error) {
 	if err := f.parseHead(); err != nil {
 		return nil, err
 	}
@@ -61,6 +122,12 @@ func Parse(data []byte) (*Font, error) {
 	}
 	if err := f.parsePost(); err != nil {
 		// post table is optional
+	}
+	if err := f.parseKern(); err != nil {
+		// kern table is optional
+	}
+	if err := f.parseGSUB(); err != nil {
+		// GSUB table is optional
 	}
 	return f, nil
 }
@@ -350,6 +417,55 @@ func (f *Font) parsePost() error {
 	whole := int16(binary.BigEndian.Uint16(d[4:6]))
 	frac := binary.BigEndian.Uint16(d[6:8])
 	f.italicAngle = float64(whole) + float64(frac)/65536.0
+	return nil
+}
+
+func (f *Font) parseKern() error {
+	d, err := f.tableData("kern")
+	if err != nil {
+		return nil // kern table is optional
+	}
+	if len(d) < 4 {
+		return nil
+	}
+	version := binary.BigEndian.Uint16(d[0:2])
+	numSubtables := int(binary.BigEndian.Uint16(d[2:4]))
+	if version != 0 {
+		return nil // only support version 0 kern table
+	}
+
+	off := 4
+	for range numSubtables {
+		if off+6 > len(d) {
+			break
+		}
+		// subtableVersion := binary.BigEndian.Uint16(d[off:off+2])
+		length := int(binary.BigEndian.Uint16(d[off+2 : off+4]))
+		coverage := binary.BigEndian.Uint16(d[off+4 : off+6])
+
+		// Format 0: Horizontal kerning
+		// coverage bits: 0: horizontal, 1: minimum, 2: cross-stream, 3: override
+		if (coverage&0xFF00) == 0 && (coverage&0x01 != 0) {
+			if off+14 <= len(d) {
+				nPairs := int(binary.BigEndian.Uint16(d[off+6 : off+8]))
+				if f.kernPairs == nil {
+					f.kernPairs = make(map[uint32]int16, nPairs)
+				}
+				pOff := off + 14
+				for range nPairs {
+					if pOff+6 > off+length || pOff+6 > len(d) {
+						break
+					}
+					left := binary.BigEndian.Uint16(d[pOff : pOff+2])
+					right := binary.BigEndian.Uint16(d[pOff+2 : pOff+4])
+					value := int16(binary.BigEndian.Uint16(d[pOff+4 : pOff+6]))
+					f.kernPairs[uint32(left)<<16|uint32(right)] = value
+					pOff += 6
+				}
+			}
+		}
+		off += length
+	}
 	return nil
 }
 

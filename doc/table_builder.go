@@ -2,7 +2,10 @@ package doc
 
 import (
 	"fmt"
+	"math"
 
+	"gpdf/doc/image"
+	"gpdf/doc/table"
 	"gpdf/doc/tagged"
 	"gpdf/model"
 )
@@ -24,6 +27,7 @@ type ITableBuilder interface {
 	RowSpec(cells ...TableCellSpec) ITableBuilder
 	FooterRow(cells ...TableCellSpec) ITableBuilder
 	EndTable() *DocumentBuilder
+	Done() *FlowBuilder
 	CurrentY() float64
 
 	// New improved methods
@@ -40,11 +44,17 @@ type cellLayout struct {
 	imageHeight                          float64
 	imageWidth                           float64
 	totalHeight                          float64
+	cellWidth                            float64
 	fontName                             string
 	fontSize                             float64
 	ascent                               float64
 	lineHeight                           float64
 	topPad, rightPad, bottomPad, leftPad float64
+
+	// New fields for image wrapping
+	numLinesBesideImage int
+	imageSide           table.ImageSide
+	imageWrap           table.ImageWrap
 }
 
 // TableBuilder builds a tagged table that can optionally span multiple pages.
@@ -199,8 +209,20 @@ func (t *TableBuilder) EndTable() *DocumentBuilder {
 		t.flow.pageIndex = t.pageIndex
 		t.flow.currY = t.currentY
 		t.flow.syncCursor()
+	} else {
+		// Update page cursor directly if not in flow
+		if t.builder.pc.validPageIndex(t.pageIndex) {
+			ps := &t.builder.pc.pages[t.pageIndex]
+			ps.CurrY = t.currentY
+		}
 	}
 	return t.builder
+}
+
+// Done finishes the table and returns the parent FlowBuilder if available.
+func (t *TableBuilder) Done() *FlowBuilder {
+	t.EndTable()
+	return t.flow
 }
 
 // CurrentY returns the current vertical position of the table.
@@ -308,8 +330,7 @@ func (t *TableBuilder) splitAndAdd(isHeader, isFooter bool, cells []TableCellSpe
 
 func (t *TableBuilder) splitCellContent(cell TableCellSpec, l cellLayout, available float64) (p1, p2 TableCellSpec) {
 	p1, p2 = cell, cell
-	contentWidth := (l.imageWidth + l.leftPad + l.rightPad) // Use original measured width
-	allLines := t.collectCellLines(cell, contentWidth, l.fontName, l.fontSize)
+	allLines := t.collectCellLines(cell, l.cellWidth, l.fontName, l.fontSize, l.imageWidth, l.imageHeight, l.imageWrap, cell.Image)
 
 	availContent := available - l.topPad - l.bottomPad
 	if l.imageHeight > 0 {
@@ -412,6 +433,7 @@ func (t *TableBuilder) measureCell(cell TableCellSpec, width float64) cellLayout
 	l := cellLayout{
 		fontName: name, fontSize: size,
 		topPad: top, rightPad: right, bottomPad: bottom, leftPad: left,
+		cellWidth: width,
 	}
 
 	if f, ok := t.builder.fc.fonts[name]; ok {
@@ -422,14 +444,51 @@ func (t *TableBuilder) measureCell(cell TableCellSpec, width float64) cellLayout
 		l.lineHeight = size * 1.2
 	}
 
-	l.lines = t.collectCellLines(cell, width, name, size)
-	height := top + bottom
-	if cell.Image != nil && len(cell.Image.Raw) > 0 {
-		w, h := computeImageDimensions(cell.Image, width, 10000, left, right, top, bottom)
-		l.imageHeight, l.imageWidth = h, w
-		height += h
+	img := cell.Image
+	var imgW, imgH float64
+	if img != nil && len(img.Raw) > 0 {
+		if img.WidthPx == 0 {
+			if info, err := image.ProcessImage(img.Raw); err == nil {
+				img.Raw = info.Raw
+				img.WidthPx = info.WidthPx
+				img.HeightPx = info.HeightPx
+				img.ColorSpace = info.ColorSpace
+				img.BitsPerComponent = info.BitsPerComponent
+				img.IsJPEG = info.IsJPEG
+			}
+		}
+		imgW, imgH = computeImageDimensions(img, width, 10000, left, right, top, bottom)
+		l.imageWidth, l.imageHeight = imgW, imgH
+		l.imageSide = img.Side
+		l.imageWrap = img.Wrap
 	}
-	height += float64(len(l.lines)) * l.lineHeight
+
+	l.lines = t.collectCellLines(cell, width, name, size, imgW, imgH, l.imageWrap, img)
+
+	height := top + bottom
+	switch l.imageWrap {
+	case table.ImageWrapSquare, table.ImageWrapTight:
+		padding := 0.0
+		if img != nil {
+			padding = img.PaddingPt
+		}
+		imageAreaHeight := imgH + padding
+		l.numLinesBesideImage = int(math.Ceil(imageAreaHeight / l.lineHeight))
+
+		textHeight := float64(len(l.lines)) * l.lineHeight
+		height += math.Max(imageAreaHeight, textHeight)
+	case table.ImageWrapInline, table.ImageWrapTopBottom:
+		if imgH > 0 {
+			height += imgH
+		}
+		height += float64(len(l.lines)) * l.lineHeight
+	default:
+		if imgH > 0 {
+			height += imgH
+		}
+		height += float64(len(l.lines)) * l.lineHeight
+	}
+
 	l.totalHeight = height
 	return l
 }
@@ -538,36 +597,75 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 	}
 
 	currY := bottom + rowHeight - l.topPad - offset
+	startY := currY
 	ps := &t.builder.pc.pages[t.pageIndex]
 
 	// 4. Render image
+	imageX := left + l.leftPad
+	cellContentWidth := width - l.leftPad - l.rightPad
+	paddingPt := 0.0
+	if cell.Image != nil {
+		paddingPt = cell.Image.PaddingPt
+	}
+
 	if cell.Image != nil && l.imageHeight > 0 {
 		mcid := 0
 		if !isArtifact {
 			mcid = ps.NextMCID
 			ps.NextMCID++
-			sc.MCIDs = append(sc.MCIDs, mcid)
+			if sc != nil {
+				sc.MCIDs = append(sc.MCIDs, mcid)
+			}
 		}
+
+		if l.imageWrap == table.ImageWrapSquare || l.imageWrap == table.ImageWrapTight {
+			if l.imageSide == table.ImageSideRight {
+				imageX = left + width - l.rightPad - l.imageWidth
+			} else {
+				imageX = left + l.leftPad
+			}
+		} else {
+			switch cell.Style.HAlign {
+			case CellHAlignCenter:
+				if cellContentWidth > l.imageWidth {
+					imageX = left + l.leftPad + (cellContentWidth-l.imageWidth)/2
+				}
+			case CellHAlignRight:
+				if cellContentWidth > l.imageWidth {
+					imageX = left + width - l.rightPad - l.imageWidth
+				}
+			}
+		}
+
 		ps.ImageRuns = append(ps.ImageRuns, imageRun{
-			X: left + l.leftPad, Y: currY - l.imageHeight,
+			X: imageX, Y: currY - l.imageHeight,
 			WidthPt: l.imageWidth, HeightPt: l.imageHeight,
 			Raw: cell.Image.Raw, WidthPx: cell.Image.WidthPx, HeightPx: cell.Image.HeightPx,
 			BitsPerComponent: cell.Image.BitsPerComponent, ColorSpace: cell.Image.ColorSpace,
-			MCID: mcid, HasMCID: !isArtifact, IsArtifact: isArtifact,
+			IsJPEG: cell.Image.IsJPEG,
+			MCID:   mcid, HasMCID: !isArtifact, IsArtifact: isArtifact,
 		})
-		currY -= l.imageHeight
+		if l.imageWrap == table.ImageWrapTopBottom || l.imageWrap == table.ImageWrapInline {
+			currY -= l.imageHeight
+		}
 	}
 
 	// 5. Render lines
 	for i, txt := range l.lines {
 		if txt == "" {
+			// Even for empty lines, we should advance currY if it's not the first line or if it represents a paragraph break.
+			if i > 0 {
+				currY -= l.lineHeight
+			}
 			continue
 		}
 		mcid := 0
 		if !isArtifact {
 			mcid = ps.NextMCID
 			ps.NextMCID++
-			sc.MCIDs = append(sc.MCIDs, mcid)
+			if sc != nil {
+				sc.MCIDs = append(sc.MCIDs, mcid)
+			}
 		}
 		y := currY
 		if i == 0 {
@@ -575,13 +673,64 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			currY -= l.ascent
 		}
 		currY -= l.lineHeight
+
+		// Horizontal alignment and wrapping adjustment
+		lineX := left + l.leftPad
+		effCellContentWidth := cellContentWidth
+		wordSpacing := 0.0
+
+		if (l.imageWrap == table.ImageWrapSquare || l.imageWrap == table.ImageWrapTight) && l.imageHeight > 0 {
+			if i < l.numLinesBesideImage {
+				effCellContentWidth = cellContentWidth - l.imageWidth - paddingPt
+				if l.imageSide == table.ImageSideLeft {
+					lineX = left + l.leftPad + l.imageWidth + paddingPt
+				}
+			} else if i == l.numLinesBesideImage {
+				// If the image was taller than the lines beside it, we might need to adjust currY
+				// but in our measurement we already account for the max(imageAreaHeight, textHeight).
+				// So if we are here, we are below the wrapped lines.
+				imageAreaHeight := l.imageHeight + paddingPt
+				expectedY := startY - imageAreaHeight
+				if currY+l.lineHeight > expectedY { // currY already subtracted l.lineHeight
+					// This line should start after the image area
+					y = expectedY - l.ascent
+					currY = expectedY - l.lineHeight
+				}
+			}
+		}
+
+		lineWidth := t.builder.textWidth(txt, l.fontSize, l.fontName)
+
+		switch cell.Style.HAlign {
+		case CellHAlignCenter:
+			if effCellContentWidth > lineWidth {
+				lineX += (effCellContentWidth - lineWidth) / 2
+			}
+		case CellHAlignRight:
+			if effCellContentWidth > lineWidth {
+				lineX += effCellContentWidth - lineWidth
+			}
+		case CellHAlignJustify:
+			isLastLine := i == len(l.lines)-1
+			if !isLastLine && effCellContentWidth > lineWidth {
+				numSpaces := countWordSpaces(txt)
+				if numSpaces > 0 {
+					wordSpacing = (effCellContentWidth - lineWidth) / float64(numSpaces)
+				}
+			}
+		}
+
 		tr := textRun{
-			Text: txt, X: left + l.leftPad, Y: y,
+			Text: txt, X: lineX, Y: y,
 			FontName: l.fontName, FontSize: l.fontSize,
 			MCID: mcid, HasMCID: !isArtifact, IsArtifact: isArtifact,
 			Role: role, UseDefaultColor: true,
+			WordSpacing: wordSpacing,
 		}
-		if cell.Style.TextColorRGB != ([3]float64{}) {
+		if cell.Style.HasTextColor {
+			tr.TextColorRGB = [3]float64{cell.Style.TextColor.R, cell.Style.TextColor.G, cell.Style.TextColor.B}
+			tr.UseDefaultColor = false
+		} else if cell.Style.TextColorRGB != ([3]float64{}) {
 			tr.TextColorRGB = cell.Style.TextColorRGB
 			tr.UseDefaultColor = false
 		}
@@ -619,21 +768,46 @@ func (t *TableBuilder) doPageBreak() {
 	}
 }
 
-func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, fontName string, fontSize float64) []string {
+func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, fontName string, fontSize float64, imgW, imgH float64, wrap table.ImageWrap, img *table.CellImageSpec) []string {
 	_, right, _, left := cell.Style.ResolvedPadding()
 	contentWidth := cellWidth - left - right
 	if contentWidth <= 0 {
 		contentWidth = 0.1
 	}
 
+	lineHeight := fontSize * 1.2
+	paddingPt := 0.0
+	if img != nil {
+		paddingPt = img.PaddingPt
+	}
+
+	lineWidthFn := func(lineIdx int) float64 {
+		if (wrap == table.ImageWrapSquare || wrap == table.ImageWrapTight) && imgW > 0 {
+			if float64(lineIdx)*lineHeight < imgH+paddingPt {
+				return contentWidth - imgW - paddingPt
+			}
+		}
+		return contentWidth
+	}
+
 	var allLines []string
+	collect := func(textStr string) {
+		if textStr == "" {
+			return
+		}
+		// We need to account for existing lines when calculating line index for lineWidthFn
+		currentLineOffset := len(allLines)
+		wrapped := t.builder.wrapTextLinesDynamic(textStr, fontSize, fontName, func(idx int) float64 {
+			return lineWidthFn(currentLineOffset + idx)
+		})
+		allLines = append(allLines, wrapped...)
+	}
+
 	if cell.Text != "" {
-		allLines = append(allLines, t.builder.wrapTextLines(cell.Text, fontSize, contentWidth, fontName)...)
+		collect(cell.Text)
 	}
 	for _, p := range cell.Paragraphs {
-		if p != "" {
-			allLines = append(allLines, t.builder.wrapTextLines(p, fontSize, contentWidth, fontName)...)
-		}
+		collect(p)
 	}
 	for i, item := range cell.ListItems {
 		if item == "" {
@@ -643,8 +817,7 @@ func (t *TableBuilder) collectCellLines(cell TableCellSpec, cellWidth float64, f
 		if cell.ListKind == "ordered" {
 			prefix = fmt.Sprintf("%d. ", i+1)
 		}
-		wrapped := t.builder.wrapTextLines(prefix+item, fontSize, contentWidth, fontName)
-		allLines = append(allLines, wrapped...)
+		collect(prefix + item)
 	}
 	return allLines
 }

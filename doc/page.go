@@ -1,6 +1,10 @@
 package doc
 
-import "gpdf/model"
+import (
+	"gpdf/doc/image"
+	"gpdf/doc/style"
+	"gpdf/model"
+)
 
 // Page represents a single page in the document and provides a fluent API for drawing on it.
 type Page struct {
@@ -57,12 +61,20 @@ func (p *Page) Table(cols int) ITableBuilder {
 
 // Image creates a new ImageObject for drawing on this page.
 func (p *Page) Image(data []byte, w, h float64) *ImageObject {
-	return &ImageObject{
+	obj := &ImageObject{
 		page: p,
 		data: data,
 		w:    w,
 		h:    h,
 	}
+	// Attempt to auto-detect dimensions for PNG/JPEG
+	if pxW, pxH, isJPEG, isPNG, err := image.DetectDimensions(data); err == nil {
+		obj.pxW = pxW
+		obj.pxH = pxH
+		obj.isJPEG = isJPEG
+		obj.isPNG = isPNG
+	}
+	return obj
 }
 
 // Flow starts a flowing layout region on this page.
@@ -113,18 +125,29 @@ func (p *Page) Paragraph(s string) *TextBoxObject {
 
 // List creates a new ListObject for drawing bulleted or numbered lists.
 func (p *Page) List(items []string) *ListObject {
-	style := p.builder.getEffectiveStyle()
+	textStyle := p.builder.getEffectiveStyle()
+	listStyle := style.DefaultListStyle()
+	listStyle.FontName = textStyle.FontName
+	listStyle.FontSize = textStyle.FontSize
+	listStyle.Color = textStyle.Color
+
 	return &ListObject{
 		page:       p,
 		items:      items,
-		style:      style,
-		lineHeight: style.FontSize * 1.25,
+		listStyle:  listStyle,
+		textStyle:  textStyle,
+		lineHeight: textStyle.FontSize * 1.25,
 	}
 }
 
 // CurrentY returns the current Y position of the "flow" if any, or some default.
 func (p *Page) CurrentY() float64 {
 	return p.builder.pc.pages[p.pageIndex].CurrY
+}
+
+// End returns the underlying DocumentBuilder for chaining.
+func (p *Page) End() *DocumentBuilder {
+	return p.builder
 }
 
 // TextObject handles fluent text drawing.
@@ -168,6 +191,12 @@ func (o *TextObject) Color(c Color) *TextObject {
 	return o
 }
 
+// LetterSpacing sets the character spacing for the text.
+func (o *TextObject) LetterSpacing(spacing float64) *TextObject {
+	o.style.LetterSpacing = spacing
+	return o
+}
+
 // Style sets the complete text style.
 func (o *TextObject) Style(s TextStyle) *TextObject {
 	o.style = s
@@ -184,11 +213,11 @@ func (o *TextObject) Draw() *Page {
 
 	switch o.align {
 	case AlignCenter:
-		o.page.builder.DrawTextCenteredColored(o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color)
+		o.page.builder.DrawTextCenteredColored(o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color, o.style.LetterSpacing)
 	case AlignRight:
-		o.page.builder.DrawTextRightColored(o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color)
+		o.page.builder.DrawTextRightColored(o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color, o.style.LetterSpacing)
 	default:
-		o.page.builder.drawTextColoredAt(o.page.pageIndex, o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color)
+		o.page.builder.drawTextColoredAt(o.page.pageIndex, o.text, o.pt.X, o.pt.Y, o.style.FontName, o.style.FontSize, o.style.Color, o.style.LetterSpacing)
 	}
 
 	if !o.atSet {
@@ -239,6 +268,25 @@ func (o *TextBoxObject) LineHeight(h float64) *TextBoxObject {
 	return o
 }
 
+func (o *TextBoxObject) Align(align TextAlignment) *TextBoxObject {
+	switch align {
+	case AlignCenter:
+		o.opts.Align = TextAlignCenter
+	case AlignRight:
+		o.opts.Align = TextAlignRight
+	case AlignJustify:
+		o.opts.Align = TextAlignJustify
+	default:
+		o.opts.Align = TextAlignLeft
+	}
+	return o
+}
+
+func (o *TextBoxObject) LetterSpacing(spacing float64) *TextBoxObject {
+	o.opts.LetterSpacing = spacing
+	return o
+}
+
 func (o *TextBoxObject) Font(name string) *TextBoxObject {
 	o.style.FontName = name
 	return o
@@ -251,6 +299,17 @@ func (o *TextBoxObject) Size(size float64) *TextBoxObject {
 
 func (o *TextBoxObject) Color(c Color) *TextBoxObject {
 	o.style.Color = c
+	o.opts.Color = c
+	o.opts.HasColor = true
+	return o
+}
+
+func (o *TextBoxObject) Style(s TextStyle) *TextBoxObject {
+	o.style = s
+	o.opts.LetterSpacing = s.LetterSpacing
+	o.opts.Color = s.Color
+	o.opts.HasColor = true
+	o.opts.IsVertical = s.IsVertical
 	return o
 }
 
@@ -282,9 +341,9 @@ type ListObject struct {
 	items      []string
 	pt         Pt
 	atSet      bool
-	style      TextStyle
+	listStyle  style.ListStyle
+	textStyle  TextStyle
 	lineHeight float64
-	ordered    bool
 }
 
 func (o *ListObject) At(x, y float64) *ListObject {
@@ -298,23 +357,51 @@ func (o *ListObject) LineHeight(h float64) *ListObject {
 	return o
 }
 
+func (o *ListObject) Marker(m style.ListMarker) *ListObject {
+	o.listStyle.Marker = m
+	return o
+}
+
+func (o *ListObject) CustomMarker(s string) *ListObject {
+	o.listStyle.Marker = style.ListMarkerCustom
+	o.listStyle.CustomMarker = s
+	return o
+}
+
+func (o *ListObject) Indent(v float64) *ListObject {
+	o.listStyle.Indent = v
+	return o
+}
+
+func (o *ListObject) Level(l int) *ListObject {
+	o.listStyle.Level = l
+	return o
+}
+
 func (o *ListObject) Ordered(b bool) *ListObject {
-	o.ordered = b
+	if b {
+		o.listStyle.Marker = style.ListMarkerDecimal
+	} else {
+		o.listStyle.Marker = style.ListMarkerDisc
+	}
 	return o
 }
 
 func (o *ListObject) Font(name string) *ListObject {
-	o.style.FontName = name
+	o.listStyle.FontName = name
+	o.textStyle.FontName = name
 	return o
 }
 
 func (o *ListObject) Size(size float64) *ListObject {
-	o.style.FontSize = size
+	o.listStyle.FontSize = size
+	o.textStyle.FontSize = size
 	return o
 }
 
 func (o *ListObject) Color(c Color) *ListObject {
-	o.style.Color = c
+	o.listStyle.Color = c
+	o.textStyle.Color = c
 	return o
 }
 
@@ -325,7 +412,7 @@ func (o *ListObject) Draw() *Page {
 		o.pt.Y = ps.CurrY
 	}
 
-	o.page.builder.DrawList(o.page.pageIndex, o.items, o.pt.X, o.pt.Y, o.lineHeight, o.ordered, o.style.FontName, o.style.FontSize)
+	o.page.builder.DrawListEnhanced(o.page.pageIndex, o.items, o.pt.X, o.pt.Y, o.lineHeight, o.listStyle)
 
 	if !o.atSet {
 		ps.CurrY -= float64(len(o.items)) * o.lineHeight
@@ -439,17 +526,34 @@ func (o *RectObject) Draw() *Page {
 
 // ImageObject handles fluent image drawing.
 type ImageObject struct {
-	page  *Page
-	data  []byte
-	w, h  float64
-	pt    Pt
-	atSet bool
+	page          *Page
+	data          []byte
+	w, h          float64
+	pxW, pxH      int
+	colorSpace    string
+	bitsPerComp   int
+	isJPEG, isPNG bool
+	pt            Pt
+	atSet         bool
 }
 
 // At sets the position for the image.
 func (o *ImageObject) At(x, y float64) *ImageObject {
 	o.pt = Pt{X: x, Y: y}
 	o.atSet = true
+	return o
+}
+
+// Px sets the pixel dimensions of the image. Required for raw RGB data.
+func (o *ImageObject) Px(w, h int) *ImageObject {
+	o.pxW = w
+	o.pxH = h
+	return o
+}
+
+// ColorSpace sets the color space of the image (e.g., "DeviceRGB").
+func (o *ImageObject) ColorSpace(cs string) *ImageObject {
+	o.colorSpace = cs
 	return o
 }
 
@@ -461,7 +565,42 @@ func (o *ImageObject) Draw() *Page {
 		o.pt.Y = ps.CurrY - o.h
 	}
 
-	o.page.builder.DrawImage(o.pt.X, o.pt.Y, o.w, o.h, o.data, 0, 0, 8, "DeviceRGB")
+	data := o.data
+	pxW, pxH := o.pxW, o.pxH
+	cs := o.colorSpace
+	bpc := o.bitsPerComp
+	isJPEG := o.isJPEG
+
+	// If it's a PNG, we must decode it to raw RGB/RGBA because PDF doesn't support PNG directly
+	if o.isPNG {
+		if raw, w, h, colorspace, err := image.DecodePNGToRaw(o.data); err == nil {
+			data = raw
+			pxW = w
+			pxH = h
+			cs = colorspace
+			bpc = 8
+		}
+	}
+
+	if cs == "" {
+		cs = "DeviceRGB"
+	}
+	if bpc <= 0 {
+		bpc = 8
+	}
+
+	o.page.builder.DrawImage(o.pt.X, o.pt.Y, o.w, o.h, data, pxW, pxH, bpc, cs)
+	// Set IsJPEG if detected
+	if isJPEG {
+		idx := o.page.pageIndex
+		if len(o.page.builder.pc.pages) > idx {
+			runs := o.page.builder.pc.pages[idx].ImageRuns
+			if len(runs) > 0 {
+				runs[len(runs)-1].IsJPEG = true
+				o.page.builder.pc.pages[idx].ImageRuns = runs
+			}
+		}
+	}
 
 	if !o.atSet {
 		ps.CurrY -= o.h
