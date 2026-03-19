@@ -28,46 +28,50 @@ func main() {
 		Title("gPDF PDF 2.0 Demo").
 		Author("gPDF").
 		Subject("Tagged PDF, layers, forms, and AES-256 encryption").
-		PageSize(595, 842).
+		A4().
 		SetLanguage("en-US").
 		SetTagged().
 		SetAcroFormSigFlags(3)
-	builder.AddPage()
+	page := builder.AddPage().CurrentPage()
 
 	// Section 1: tagged heading and paragraph.
-	builder = builder.BeginSection().
-		DrawHeading(0, 1, "PDF 2.0 Demo", 72, 780, "", 0).
-		DrawTaggedParagraphBox(0,
-			"This document demonstrates tagged content, optional layers, AcroForm fields, and AES-256 encryption produced by gPDF.",
-			72, 750, "Helvetica", 12,
-			doc.TextLayoutOptions{Width: 451},
-		).
+	page.BeginSection().
+		Heading("PDF 2.0 Demo", 1).At(72, 780).Draw().
+		TextBox("This document demonstrates tagged content, optional layers, AcroForm fields, and AES-256 encryption produced by gPDF.").
+		At(72, 750).
+		Font("Helvetica").
+		Size(12).
+		Width(451).
+		AsParagraph().
+		Draw().
 		EndSection()
 
 	// Section 2: tagged table with header row.
-	tb := builder.BeginTable(0, 72, 620, 451, 140, 3).
+	tb := page.Table(3).
+		At(72, 620).
+		Width(451).
 		AllowPageBreak().
-		HeaderRow(
+		HeaderSpec(
 			doc.TableCellSpec{Text: "Item", IsHeader: true},
 			doc.TableCellSpec{Text: "Description", IsHeader: true},
 			doc.TableCellSpec{Text: "Total", IsHeader: true},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "T-001"},
 			doc.TableCellSpec{Text: "Tagged content (headings, paragraphs, lists, tables)."},
 			doc.TableCellSpec{Text: "$1,000.00"},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "T-002"},
 			doc.TableCellSpec{Text: "Optional content groups (layers) for overlays and conditional content."},
 			doc.TableCellSpec{Text: "$500.00"},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "T-003"},
 			doc.TableCellSpec{Text: "Interactive forms (text fields, checkboxes, submit buttons)."},
 			doc.TableCellSpec{Text: "$750.00"},
 		).
-		EndTable()
+		Draw()
 	if tb == nil {
 		fmt.Fprintln(os.Stderr, "failed to create table")
 		os.Exit(1)
@@ -75,36 +79,39 @@ func main() {
 
 	// Section 3: optional content group (layer) with overlay note.
 	layer := builder.BeginLayer("Overlay", true)
-	builder = builder.DrawInLayer(layer, 0, func(db *doc.DocumentBuilder) {
-		db.DrawTaggedQuoteBox(0,
-			"This note belongs to the 'Overlay' layer. In viewers that support optional content groups, it can be toggled.",
-			72, 460, "Helvetica-Oblique", 10,
-			doc.TextLayoutOptions{Width: 451},
-		)
+	builder.DrawInLayer(layer, 0, func(db *doc.DocumentBuilder) {
+		p := db.CurrentPage()
+		p.TextBox("This note belongs to the 'Overlay' layer. In viewers that support optional content groups, it can be toggled.").
+			At(72, 460).
+			Font("Helvetica-Oblique").
+			Size(10).
+			Width(451).
+			AsQuote().
+			Draw()
 	})
 
 	// Section 4: simple tagged list.
-	builder = builder.BeginSection().
-		DrawHeading(0, 2, "Features", 72, 420, "", 0)
-	builder = builder.DrawList(0,
-		[]string{
+	page.BeginSection().
+		Heading("Features", 2).At(72, 420).Draw().
+		List([]string{
 			"Tagged headings, paragraphs, tables, and lists for accessibility.",
 			"Optional content layers for conditional display.",
 			"AcroForm fields for interactive data entry.",
 			"AES-256 encryption for modern password protection.",
-		},
-		72, 400, 14, true, "Helvetica", 11,
-	).EndSection()
+		}).At(72, 400).LineHeight(14).Ordered(true).Font("Helvetica").Size(11).Draw().
+		EndSection()
 
 	// Section 5: AcroForm fields on the first page.
-	builder = builder.
+	builder.
 		AddTextField(0, 72, 340, 320, 360, "name", "", "Your name", true).
 		AddTextField(0, 72, 310, 320, 330, "email", "", "Your email address", true).
-		AddCheckBox(0, 72, 280, 84, 292, "accept_terms", false, "I accept the terms", true).
-		DrawText("Name:", 72, 365, "Helvetica", 11).
-		DrawText("Email:", 72, 335, "Helvetica", 11).
-		DrawText("I accept the terms", 90, 285, "Helvetica", 11).
-		AddSubmitButton(0, 380, 280, 520, 300, "submit", "Submit demo", "https://example.com/submit", "Submit the demo form")
+		AddCheckBox(0, 72, 280, 84, 292, "accept_terms", false, "I accept the terms", true)
+
+	page.Text("Name:").At(72, 365).Font("Helvetica").Size(11).Draw()
+	page.Text("Email:").At(72, 335).Font("Helvetica").Size(11).Draw()
+	page.Text("I accept the terms").At(90, 285).Font("Helvetica").Size(11).Draw()
+
+	builder.AddSubmitButton(0, 380, 280, 520, 300, "submit", "Submit demo", "https://example.com/submit", "Submit the demo form")
 
 	document, err := builder.Build()
 	if err != nil {

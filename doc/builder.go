@@ -8,6 +8,7 @@ import (
 	"gpdf/doc/layer"
 	"gpdf/doc/metadata"
 	"gpdf/doc/outline"
+	"gpdf/doc/pagesize"
 	taggedpkg "gpdf/doc/tagged"
 	"gpdf/font"
 	"gpdf/model"
@@ -34,6 +35,8 @@ type DocumentBuilder struct {
 	textDrawer     bldrtext.Drawer
 	graphicsDrawer bldrgfx.Drawer
 	imageDrawer    bldrimg.Drawer
+
+	defaultStyle TextStyle
 }
 
 // Err returns the first error recorded during building. Check after Build() or before further fluent calls.
@@ -120,6 +123,37 @@ func (b *DocumentBuilder) PageSize(width, height float64) *DocumentBuilder {
 	return b
 }
 
+// ApplyPageSize sets the default page size from a predefined Size preset.
+func (b *DocumentBuilder) ApplyPageSize(sz pagesize.Size) *DocumentBuilder {
+	return b.PageSize(sz.Width, sz.Height)
+}
+
+// SetDefaultStyle sets the default text style for the document.
+func (b *DocumentBuilder) SetDefaultStyle(s TextStyle) *DocumentBuilder {
+	b.defaultStyle = s
+	return b
+}
+
+func (b *DocumentBuilder) getEffectiveStyle() TextStyle {
+	s := b.defaultStyle
+	if s.FontName == "" {
+		s.FontName = "Helvetica"
+	}
+	if s.FontSize == 0 {
+		s.FontSize = 12
+	}
+	// Color is already black by default (0,0,0) if not set.
+	return s
+}
+
+// CurrentPage returns a Page object for the last added page.
+func (b *DocumentBuilder) CurrentPage() *Page {
+	if len(b.pc.pages) == 0 {
+		return nil
+	}
+	return &Page{builder: b, pageIndex: len(b.pc.pages) - 1}
+}
+
 // AddPage adds a blank page with the current default page size.
 func (b *DocumentBuilder) AddPage() *DocumentBuilder {
 	w, h := b.pc.pageSize[0], b.pc.pageSize[1]
@@ -130,9 +164,25 @@ func (b *DocumentBuilder) AddPage() *DocumentBuilder {
 	return b
 }
 
+// Table starts a new table with the given number of columns.
+func (b *DocumentBuilder) Table(cols int) ITableBuilder {
+	// Defaults to standard margins/width if not overridden by .At() or .Width()
+	return b.BeginTable(len(b.pc.pages)-1, 72, 0, 451, 0, cols)
+}
+
+// pageWidth returns the page width in points for the given index.
+func (b *DocumentBuilder) pageWidth(pageIndex int) float64 {
+	return b.pc.width(pageIndex)
+}
+
 // pageHeight returns the page height in points for the given index.
 func (b *DocumentBuilder) pageHeight(pageIndex int) float64 {
 	return b.pc.height(pageIndex)
+}
+
+// GetDefaultPageSize returns the current default page size for new pages.
+func (b *DocumentBuilder) GetDefaultPageSize() (float64, float64) {
+	return b.pc.pageSize[0], b.pc.pageSize[1]
 }
 
 // AddOutline adds a document outline (bookmark) linking to the given page.

@@ -34,60 +34,75 @@ func main() {
 		Title("Professional Quotation - gPDF Solutions").
 		Author("gPDF Engineering").
 		Subject("Business Quotation Example").
-		PageSize(595, 842)
-	builder.AddPage()
+		A4()
+	page := builder.AddPage().CurrentPage()
 
 	// 1. Header with Logo and Title
 	// Create a simple logo in-memory (raw RGB)
 	logoData := createLogo()
 	builder.DrawImage(480, 750, 60, 60, logoData, 100, 100, 8, "DeviceRGB")
 
-	builder.
-		DrawHeading(0, 1, "QUOTATION", 72, 780, "Helvetica-Bold", 24).
-		DrawLine(0, 72, 770, 523, 770, doc.LineStyle{Width: 2, Color: brandColor})
+	page.Heading("QUOTATION", 1).At(72, 780).Draw()
+	page.Line(doc.Pt{X: 72, Y: 770}, doc.Pt{X: 523, Y: 770}).
+		Style(doc.LineStyle{Width: 2, Color: brandColor}).
+		Draw()
 
 	// 2. Contact Information
-	builder.
-		DrawTextColored("Prepared for:", 72, 740, "Helvetica-Bold", 10, lightText).
-		DrawTextBox(0, "Example Customer Ltd.\n123 Business Avenue\nCity, State 54321", 72, 725, "Helvetica", 11, doc.TextLayoutOptions{Width: 200, LineHeight: 14}).
-		DrawTextColored("Prepared by:", 300, 740, "Helvetica-Bold", 10, lightText).
-		DrawTextBox(0, "gPDF Solutions Corp.\n456 Tech Park\nInnovation Way", 300, 725, "Helvetica", 11, doc.TextLayoutOptions{Width: 200, LineHeight: 14})
+	page.Text("Prepared for:").At(72, 740).Font("Helvetica-Bold").Size(10).Color(lightText).Draw()
+	page.TextBox("Example Customer Ltd.\n123 Business Avenue\nCity, State 54321").
+		At(72, 725).
+		Font("Helvetica").
+		Size(11).
+		Width(200).
+		LineHeight(14).
+		Draw()
 
-	builder.
-		DrawTextColored("Date:", 72, 660, "Helvetica-Bold", 10, lightText).
-		DrawText("2026-03-19", 110, 660, "Helvetica", 10).
-		DrawTextColored("Quote #:", 300, 660, "Helvetica-Bold", 10, lightText).
-		DrawText("QT-2026-001", 350, 660, "Helvetica", 10)
+	page.Text("Prepared by:").At(300, 740).Font("Helvetica-Bold").Size(10).Color(lightText).Draw()
+	page.TextBox("gPDF Solutions Corp.\n456 Tech Park\nInnovation Way").
+		At(300, 725).
+		Font("Helvetica").
+		Size(11).
+		Width(200).
+		LineHeight(14).
+		Draw()
+
+	page.Text("Date:").At(72, 660).Font("Helvetica-Bold").Size(10).Color(lightText).Draw()
+	page.Text("2026-03-19").At(110, 660).Font("Helvetica").Size(10).Draw()
+
+	page.Text("Quote #:").At(300, 660).Font("Helvetica-Bold").Size(10).Color(lightText).Draw()
+	page.Text("QT-2026-001").At(350, 660).Font("Helvetica").Size(10).Draw()
 
 	// 3. Items Table
-	table := builder.BeginTable(0, 72, 620, 451, 0, 4). // cols=4
-								WithHeaderFillColor(headerGray).
-								WithAlternateRowColor(altRowGray).
-								HeaderRow(
+	table := page.Table(4).
+		At(72, 620).
+		Width(451).
+		WithHeaderFillColor(headerGray).
+		WithAlternateRowColor(altRowGray).
+		HeaderSpec(
 			doc.TableCellSpec{Text: "Item ID", Style: doc.CellStyle{PaddingLeft: 8}},
 			doc.TableCellSpec{Text: "Description"},
 			doc.TableCellSpec{Text: "Qty", Style: doc.CellStyle{PaddingRight: 8}},
 			doc.TableCellSpec{Text: "Unit Price", Style: doc.CellStyle{PaddingRight: 8}},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "PROD-001", Style: doc.CellStyle{PaddingLeft: 8}},
 			doc.TableCellSpec{Text: "Enterprise License - Core Module with multi-region high availability support and 24/7 priority response"},
 			doc.TableCellSpec{Text: "1", Style: doc.CellStyle{PaddingRight: 8}},
 			doc.TableCellSpec{Text: "$5,000.00", Style: doc.CellStyle{PaddingRight: 8}},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "SERV-042", Style: doc.CellStyle{PaddingLeft: 8}},
 			doc.TableCellSpec{Text: "Implementation & Setup (On-site)"},
 			doc.TableCellSpec{Text: "1", Style: doc.CellStyle{PaddingRight: 8}},
 			doc.TableCellSpec{Text: "$2,500.00", Style: doc.CellStyle{PaddingRight: 8}},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "SUPP-ANN", Style: doc.CellStyle{PaddingLeft: 8}},
 			doc.TableCellSpec{Text: "Annual Platinum Support Package"},
 			doc.TableCellSpec{Text: "1", Style: doc.CellStyle{PaddingRight: 8}},
 			doc.TableCellSpec{Text: "$1,200.00", Style: doc.CellStyle{PaddingRight: 8}},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "TRAIN-01", Style: doc.CellStyle{PaddingLeft: 8}},
 			doc.TableCellSpec{Text: "User Training Workshop (Up to 10 pax)"},
 			doc.TableCellSpec{Text: "2", Style: doc.CellStyle{PaddingRight: 8}},
@@ -99,37 +114,39 @@ func main() {
 
 	// 4. Totals Area
 	totalX := 400.0
-	builder.
-		DrawTextRight("Subtotal:", totalX, currentY, "Helvetica", 11).
-		DrawTextRight("$10,200.00", 523, currentY, "Helvetica", 11)
+	page.Text("Subtotal:").At(totalX, currentY).Font("Helvetica").Size(11).Align(doc.AlignRight).Draw()
+	page.Text("$10,200.00").At(523, currentY).Font("Helvetica").Size(11).Align(doc.AlignRight).Draw()
 
 	currentY -= 20
-	builder.
-		DrawTextRight("Tax (10%):", totalX, currentY, "Helvetica", 11).
-		DrawTextRight("$1,020.00", 523, currentY, "Helvetica", 11)
+	page.Text("Tax (10%):").At(totalX, currentY).Font("Helvetica").Size(11).Align(doc.AlignRight).Draw()
+	page.Text("$1,020.00").At(523, currentY).Font("Helvetica").Size(11).Align(doc.AlignRight).Draw()
 
 	currentY -= 25
-	builder.
-		DrawLine(0, totalX-50, currentY+15, 523, currentY+15, doc.LineStyle{Width: 1, Color: brandColor}).
-		DrawTextRightColored("Grand Total:", totalX, currentY, "Helvetica-Bold", 14, brandColor).
-		DrawTextRightColored("$11,220.00", 523, currentY, "Helvetica-Bold", 14, brandColor)
+	page.Line(doc.Pt{X: totalX - 50, Y: currentY + 15}, doc.Pt{X: 523, Y: currentY + 15}).
+		Style(doc.LineStyle{Width: 1, Color: brandColor}).
+		Draw()
+
+	page.Text("Grand Total:").At(totalX, currentY).Font("Helvetica-Bold").Size(14).Color(brandColor).Align(doc.AlignRight).Draw()
+	page.Text("$11,220.00").At(523, currentY).Font("Helvetica-Bold").Size(14).Color(brandColor).Align(doc.AlignRight).Draw()
 
 	// 5. Terms and Conditions
 	currentY -= 60
-	builder.DrawHeading(0, 3, "Terms and Conditions", 72, currentY, "Helvetica-Bold", 12)
+	page.Heading("Terms and Conditions", 3).At(72, currentY).Draw()
 	currentY -= 20
-	builder.DrawList(0, []string{
+	page.List([]string{
 		"Quotation is valid for 30 days from the date of issue.",
 		"Payment terms: 50% upfront, 50% upon completion.",
 		"Implementation schedule to be agreed upon signing.",
 		"All prices are in USD.",
-	}, 72, currentY, 15, false, "Helvetica", 10)
+	}).At(72, currentY).LineHeight(15).Font("Helvetica").Size(10).Draw()
 
 	// 6. Footer
-	builder.
-		DrawLine(0, 72, 60, 523, 60, doc.LineStyle{Width: 0.5, Color: lightText}).
-		DrawTextCenteredColored("Thank you for your business!", 297, 45, "Helvetica-Oblique", 10, lightText).
-		DrawTextCenteredColored("gPDF Solutions Corp | www.gpdf-example.com | +1 (555) 012-3456", 297, 30, "Helvetica", 8, lightText)
+	page.Line(doc.Pt{X: 72, Y: 60}, doc.Pt{X: 523, Y: 60}).
+		Style(doc.LineStyle{Width: 0.5, Color: lightText}).
+		Draw()
+
+	page.Text("Thank you for your business!").At(297, 45).Font("Helvetica-Oblique").Size(10).Color(lightText).Align(doc.AlignCenter).Draw()
+	page.Text("gPDF Solutions Corp | www.gpdf-example.com | +1 (555) 012-3456").At(297, 30).Font("Helvetica").Size(8).Color(lightText).Align(doc.AlignCenter).Draw()
 
 	// Build and Save
 	document, err := builder.Build()

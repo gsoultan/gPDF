@@ -27,11 +27,11 @@ func TestPDF20DemoLikeDocument(t *testing.T) {
 
 	// Simple tagged table.
 	tb := builder.BeginTable(0, 72, 700, 451, 60, 2).
-		HeaderRow(
+		HeaderSpec(
 			doc.TableCellSpec{Text: "Col1", IsHeader: true},
 			doc.TableCellSpec{Text: "Col2", IsHeader: true},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "A"},
 			doc.TableCellSpec{Text: "B"},
 		).

@@ -58,22 +58,22 @@ func (b *DocumentBuilder) DrawTaggedParagraphBox(pageIndex int, textStr string, 
 
 // layoutTextIntoPages performs simple line layout for paragraph-like text and appends textRuns.
 // For tagged text, layout is restricted to a single page; AllowPageBreak is ignored in that case.
-func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions, isTagged bool, role model.Name) {
+func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, opts TextLayoutOptions, isTagged bool, role model.Name) (int, float64) {
 	if !b.pc.validPageIndex(pageIndex) {
-		return
+		return pageIndex, y
 	}
 	ps := &b.pc.pages[pageIndex]
 
 	lines := b.wrapTextLines(textStr, fontSize, opts.Width, fontName)
 	if len(lines) == 0 {
-		return
+		return pageIndex, y
 	}
 
 	height := b.pageHeight(pageIndex)
 	if height <= 0 {
 		height = 842
 	}
-	const marginBottom = 40.0
+	const marginBottom = 20.0
 
 	currentPage := pageIndex
 	currentY := y
@@ -94,8 +94,9 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 			break
 		}
 		if !isTagged && opts.AllowPageBreak && currentY < marginBottom {
+			// If we need a new page and none exist, AddPage.
 			if currentPage+1 >= len(b.pc.pages) {
-				break
+				b.AddPage()
 			}
 			currentPage++
 			currentY = b.pageHeight(currentPage) - marginBottom
@@ -147,6 +148,7 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 	if opts.ParagraphSpacing > 0 {
 		currentY -= opts.ParagraphSpacing
 	}
+	return currentPage, currentY
 }
 
 // countWordSpaces returns the number of inter-word spaces in s (i.e. space characters).
@@ -193,26 +195,17 @@ func (b *DocumentBuilder) textWidth(s string, fontSize float64, fontName string)
 // DrawText queues text to be drawn on the last added page at (x, y) using the given font and size.
 // FontName should be a standard PDF base font (e.g. Helvetica, Times-Roman). Call after AddPage().
 func (b *DocumentBuilder) DrawText(textStr string, x, y float64, fontName string, fontSize float64) *DocumentBuilder {
-	if len(b.pc.pages) == 0 {
-		return b
-	}
-	if fontName == "" {
-		fontName = "Helvetica"
-	}
-	if fontSize <= 0 {
-		fontSize = 12
-	}
-	idx := len(b.pc.pages) - 1
-	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
-		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
-	})
-	return b
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, ColorBlack)
 }
 
 // DrawTextColored queues text drawn in the specified RGB color on the last added page.
 // It behaves like DrawText but sets the fill color for that run.
 func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
-	if len(b.pc.pages) == 0 {
+	return b.drawTextColoredAt(len(b.pc.pages)-1, textStr, x, y, fontName, fontSize, color)
+}
+
+func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, color Color) *DocumentBuilder {
+	if !b.pc.validPageIndex(pageIndex) {
 		return b
 	}
 	if fontName == "" {
@@ -221,8 +214,7 @@ func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName
 	if fontSize <= 0 {
 		fontSize = 12
 	}
-	idx := len(b.pc.pages) - 1
-	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+	b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB: [3]float64{color.R, color.G, color.B},
 	})

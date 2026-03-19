@@ -10,4 +10,6 @@ type Page struct {
 	GraphicRuns []GraphicRun
 	NextMCID    int
 	NextGSIndex int
+	CurrX       float64
+	CurrY       float64
 }

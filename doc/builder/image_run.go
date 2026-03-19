@@ -20,4 +20,6 @@ type ImageRun struct {
 
 	MCID    int
 	HasMCID bool
+
+	IsArtifact bool
 }

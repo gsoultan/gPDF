@@ -20,4 +20,6 @@ type TextRun struct {
 	MCID    int
 	HasMCID bool
 	Role    model.Name
+
+	IsArtifact bool
 }

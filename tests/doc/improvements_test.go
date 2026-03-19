@@ -273,22 +273,22 @@ func TestTableWithFillColors(t *testing.T) {
 	b = b.BeginTable(0, 50, 750, 450, 200, 3).
 		WithHeaderFillColor(doc.ColorNavy).
 		WithAlternateRowColor(doc.ColorLightGray).
-		HeaderRow(
+		HeaderSpec(
 			doc.TableCellSpec{Text: "Name", Style: doc.CellStyle{TextColorRGB: [3]float64{1, 1, 1}}},
 			doc.TableCellSpec{Text: "Age", Style: doc.CellStyle{TextColorRGB: [3]float64{1, 1, 1}}},
 			doc.TableCellSpec{Text: "City", Style: doc.CellStyle{TextColorRGB: [3]float64{1, 1, 1}}},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "Alice"},
 			doc.TableCellSpec{Text: "30"},
 			doc.TableCellSpec{Text: "Jakarta"},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "Bob"},
 			doc.TableCellSpec{Text: "25"},
 			doc.TableCellSpec{Text: "Bandung"},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{
 				Text:    "Merged col",
 				Style:   doc.CellStyle{FillColor: doc.ColorOrange, HasFillColor: true},
@@ -304,10 +304,10 @@ func TestTableColSpanWidth(t *testing.T) {
 	// Verify that a ColSpan:3 cell across a 3-col table builds without error.
 	b := buildOnePagePDF(t)
 	b = b.BeginTable(0, 50, 750, 450, 100, 3).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "Full width span", ColSpan: 3},
 		).
-		Row(
+		RowSpec(
 			doc.TableCellSpec{Text: "A"},
 			doc.TableCellSpec{Text: "B"},
 			doc.TableCellSpec{Text: "C"},

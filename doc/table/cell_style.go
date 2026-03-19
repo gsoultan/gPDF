@@ -25,6 +25,9 @@ type CellStyle struct {
 
 	FillColor    style.Color
 	HasFillColor bool
+
+	FontName string
+	FontSize float64
 }
 
 // ResolvedPadding returns the effective padding.
@@ -46,6 +49,20 @@ func (s CellStyle) ResolvedPadding() (top, right, bottom, left float64) {
 	left = s.PaddingLeft
 	if left == 0 {
 		left = defaultPad
+	}
+	return
+}
+
+// ResolvedFont returns the effective font name and size.
+// Defaults to Helvetica 10pt if not specified.
+func (s CellStyle) ResolvedFont() (name string, size float64) {
+	name = s.FontName
+	if name == "" {
+		name = "Helvetica"
+	}
+	size = s.FontSize
+	if size <= 0 {
+		size = 10.0
 	}
 	return
 }

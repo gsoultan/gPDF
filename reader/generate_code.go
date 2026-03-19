@@ -374,7 +374,7 @@ func writeTables(out *codeOutput, tables []Table, opts CodeGenOptions, pageIndex
 			for col := range table.Cols {
 				cells[col] = fmt.Sprintf("doc.TableCellSpec{Text: %s}", quoteString(table.Cell(row, col)))
 			}
-			if err := out.writef("\t\t\ttbl.Row(%s)\n", strings.Join(cells, ", ")); err != nil {
+			if err := out.writef("\t\t\ttbl.RowSpec(%s)\n", strings.Join(cells, ", ")); err != nil {
 				return err
 			}
 		}

@@ -19,6 +19,10 @@ func (b *DocumentBuilder) PageHeight(pageIndex int) float64 {
 	return b.pc.height(pageIndex)
 }
 
+func (b *DocumentBuilder) PageWidth(pageIndex int) float64 {
+	return b.pc.width(pageIndex)
+}
+
 func (b *DocumentBuilder) PageAt(pageIndex int) *builder.Page {
 	if !b.pc.validPageIndex(pageIndex) {
 		return nil

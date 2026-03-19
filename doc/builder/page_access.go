@@ -11,6 +11,7 @@ type PageAccess interface {
 	ValidPageIndex(idx int) bool
 	PageCount() int
 	PageHeight(pageIndex int) float64
+	PageWidth(pageIndex int) float64
 	PageAt(pageIndex int) *Page
 	AppendPage()
 	NextMCID(pageIndex int) int

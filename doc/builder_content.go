@@ -62,7 +62,17 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 				currentColorSet = true
 			}
 		}
-		if r.HasMCID {
+		if r.IsArtifact {
+			ops = append(ops,
+				content.Op{
+					Name: "BDC",
+					Args: []model.Object{
+						model.Name("Artifact"),
+						model.Dict{model.Name("Type"): model.Name("Pagination")},
+					},
+				},
+			)
+		} else if r.HasMCID {
 			ops = append(ops,
 				content.Op{
 					Name: "BDC",
@@ -81,7 +91,7 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 		} else {
 			// Basic UTF-8 to WinAnsi conversion for common characters like bullet point.
 			// This avoids (â€) encoding issues when using standard fonts.
-			textArg = model.HexString(winAnsiEncode(r.Text))
+			textArg = model.String(winAnsiEncode(r.Text))
 		}
 
 		btOps := []content.Op{
@@ -140,7 +150,7 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 			)
 		}
 
-		if r.HasMCID {
+		if r.IsArtifact || r.HasMCID {
 			ops = append(ops, content.Op{Name: "EMC", Args: nil})
 		}
 	}
@@ -167,7 +177,17 @@ func (b *DocumentBuilder) buildImageOps(page *pageSpec, pageHeight float64, imag
 		if i < len(imageStreamNums) {
 			xobj[imName] = model.Ref{ObjectNumber: imageStreamNums[i], Generation: 0}
 		}
-		if im.HasMCID {
+		if im.IsArtifact {
+			ops = append(ops,
+				content.Op{
+					Name: "BDC",
+					Args: []model.Object{
+						model.Name("Artifact"),
+						model.Dict{model.Name("Type"): model.Name("Pagination")},
+					},
+				},
+			)
+		} else if im.HasMCID {
 			ops = append(ops,
 				content.Op{
 					Name: "BDC",
@@ -220,7 +240,7 @@ func (b *DocumentBuilder) buildImageOps(page *pageSpec, pageHeight float64, imag
 			content.Op{Name: "Do", Args: []model.Object{imName}},
 			content.Op{Name: "Q", Args: nil},
 		)
-		if im.HasMCID {
+		if im.IsArtifact || im.HasMCID {
 			ops = append(ops, content.Op{Name: "EMC", Args: nil})
 		}
 	}
