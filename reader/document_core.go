@@ -301,7 +301,7 @@ func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref) (model.Obje
 	}
 	streamCopy := &model.Stream{
 		Dict:    dict,
-		Content: append([]byte(nil), v.Content...),
+		Content: bytes.Clone(v.Content),
 	}
 	decoded, err := c.decodeStream(streamCopy, ref)
 	if err != nil {

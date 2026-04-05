@@ -1,7 +1,10 @@
 package reader
 
 import (
+	"bytes"
+	"compress/zlib"
 	"fmt"
+	"io"
 	"math"
 
 	"gpdf/content"
@@ -83,6 +86,10 @@ func imageInfoFromStream(s *model.Stream, name string, pageIdx int, maxImageByte
 			}
 		}
 	}
+	// Flag CMYK images: consumer must convert CMYK→RGB to avoid color shift
+	if info.ColorSpace == "DeviceCMYK" {
+		info.NeedsColorConvert = true
+	}
 
 	// Filter: may be a Name or an Array of Names
 	switch f := s.Dict[model.Name("Filter")].(type) {
@@ -104,6 +111,22 @@ func imageInfoFromStream(s *model.Stream, name string, pageIdx int, maxImageByte
 	info.Format = detectImageFormat(info.Filter, s.Content)
 
 	info.Data = s.Content
+	// Soft mask support: fully decode the SMask stream including FlateDecode +
+	// PNG Predictor so that SMaskData always contains raw pixel bytes.
+	if sm, ok := s.Dict[model.Name("SMask")]; ok {
+		if smStream, ok3 := sm.(*model.Stream); ok3 {
+			info.HasSMask = true
+			decoded, wasDecoded := decodeSMaskFully(smStream)
+			info.SMaskData = decoded
+			info.SMaskDecoded = wasDecoded
+			if w, ok := smStream.Dict[model.Name("Width")].(model.Integer); ok {
+				info.SMaskWidth = int(w)
+			}
+			if h, ok := smStream.Dict[model.Name("Height")].(model.Integer); ok {
+				info.SMaskHeight = int(h)
+			}
+		}
+	}
 	return info, true
 }
 
@@ -178,7 +201,7 @@ func extractImagesFromOps(
 			state.stack = state.stack[:len(state.stack)-1]
 		case "cm":
 			if len(op.Args) >= 6 {
-				state.ctm = state.ctm.multiply(matrixFromObjects(op.Args))
+				state.ctm = matrixFromObjects(op.Args).multiply(state.ctm)
 			}
 		case "gs":
 			if len(op.Args) > 0 {
@@ -246,6 +269,23 @@ func extractImagesFromXObject(
 		if !ok {
 			return nil
 		}
+		// Resolve soft mask if present and indirect
+		if !image.HasSMask {
+			if sm, ok := stream.Dict[model.Name("SMask")]; ok {
+				if smStream, _, ok2 := resolveStreamObject(src, sm); ok2 && smStream != nil {
+					image.HasSMask = true
+					image.SMaskData = smStream.Content
+					if w, ok := smStream.Dict[model.Name("Width")].(model.Integer); ok {
+						image.SMaskWidth = int(w)
+					}
+					if h, ok := smStream.Dict[model.Name("Height")].(model.Integer); ok {
+						image.SMaskHeight = int(h)
+					}
+				}
+			}
+		}
+		// Preserve exact placement matrix
+		image.Matrix = [6]float64{ctm.a, ctm.b, ctm.c, ctm.d, ctm.e, ctm.f}
 		applyImagePlacement(&image, ctm)
 		return []ImageInfo{image}
 	case "Form":
@@ -292,6 +332,186 @@ func applyImagePlacement(image *ImageInfo, ctm matrix) {
 	if image.HeightPt == 0 {
 		image.HeightPt = float64(image.Height)
 	}
+}
+
+// decodeSMaskFully decodes an SMask stream by:
+//  1. Decompressing FlateDecode (zlib) if present.
+//  2. Un-filtering PNG Predictor rows (Predictor >= 10) if specified in DecodeParms.
+//
+// Returns the decoded bytes and wasDecoded=true when any processing was applied.
+// Falls back to raw smStream.Content on any error.
+func decodeSMaskFully(smStream *model.Stream) (data []byte, wasDecoded bool) {
+	data = smStream.Content
+	if len(data) == 0 {
+		return data, false
+	}
+
+	// Resolve filter name
+	var filterName string
+	switch f := smStream.Dict[model.Name("Filter")].(type) {
+	case model.Name:
+		filterName = string(f)
+	case model.Array:
+		if len(f) > 0 {
+			if n, ok := f[0].(model.Name); ok {
+				filterName = string(n)
+			}
+		}
+	}
+
+	if filterName != "FlateDecode" {
+		return data, false
+	}
+
+	// Decompress with zlib
+	zr, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return data, false
+	}
+	decompressed, err := io.ReadAll(zr)
+	zr.Close()
+	if err != nil {
+		return data, false
+	}
+	wasDecoded = true
+	data = decompressed
+
+	// Check for PNG Predictor in DecodeParms
+	var predictor, colors, bpc, columns int
+	colors = 1
+	bpc = 8
+	var dpDict model.Dict
+	switch dp := smStream.Dict[model.Name("DecodeParms")].(type) {
+	case model.Dict:
+		dpDict = dp
+	case model.Array:
+		if len(dp) > 0 {
+			if d, ok := dp[0].(model.Dict); ok {
+				dpDict = d
+			}
+		}
+	}
+	if dpDict != nil {
+		if p, ok := dpDict[model.Name("Predictor")].(model.Integer); ok {
+			predictor = int(p)
+		}
+		if c, ok := dpDict[model.Name("Colors")].(model.Integer); ok {
+			colors = int(c)
+		}
+		if b, ok := dpDict[model.Name("BitsPerComponent")].(model.Integer); ok {
+			bpc = int(b)
+		}
+		if col, ok := dpDict[model.Name("Columns")].(model.Integer); ok {
+			columns = int(col)
+		}
+	}
+
+	if predictor < 10 {
+		return data, wasDecoded
+	}
+
+	// Fall back to stream Width when Columns not in DecodeParms
+	if columns == 0 {
+		if w, ok := smStream.Dict[model.Name("Width")].(model.Integer); ok {
+			columns = int(w)
+		}
+	}
+	if columns == 0 {
+		return data, wasDecoded
+	}
+
+	// Apply PNG predictor un-filtering
+	bytesPerPixel := (colors*bpc + 7) / 8
+	rowSize := (columns*colors*bpc + 7) / 8
+	rowStride := rowSize + 1 // +1 for per-row filter byte
+	if len(data) < rowStride || rowStride == 0 {
+		return data, wasDecoded
+	}
+	numRows := len(data) / rowStride
+	output := make([]byte, numRows*rowSize)
+	for row := range numRows {
+		src := data[row*rowStride:]
+		filterByte := src[0]
+		rowData := src[1 : 1+rowSize]
+		dst := output[row*rowSize:]
+		var prevRow []byte
+		if row > 0 {
+			prevRow = output[(row-1)*rowSize:]
+		}
+		switch filterByte {
+		case 0: // None
+			copy(dst, rowData)
+		case 1: // Sub
+			for i := range rowSize {
+				var a byte
+				if i >= bytesPerPixel {
+					a = dst[i-bytesPerPixel]
+				}
+				dst[i] = rowData[i] + a
+			}
+		case 2: // Up
+			for i := range rowSize {
+				var b byte
+				if prevRow != nil {
+					b = prevRow[i]
+				}
+				dst[i] = rowData[i] + b
+			}
+		case 3: // Average
+			for i := range rowSize {
+				var a, b byte
+				if i >= bytesPerPixel {
+					a = dst[i-bytesPerPixel]
+				}
+				if prevRow != nil {
+					b = prevRow[i]
+				}
+				dst[i] = rowData[i] + byte((int(a)+int(b))/2)
+			}
+		case 4: // Paeth
+			for i := range rowSize {
+				var a, b, c byte
+				if i >= bytesPerPixel {
+					a = dst[i-bytesPerPixel]
+				}
+				if prevRow != nil {
+					b = prevRow[i]
+					if i >= bytesPerPixel {
+						c = prevRow[i-bytesPerPixel]
+					}
+				}
+				dst[i] = rowData[i] + paethPredictor(a, b, c)
+			}
+		default:
+			copy(dst, rowData)
+		}
+	}
+	return output, true
+}
+
+// paethPredictor implements the PNG Paeth predictor function (RFC 2083 §6.6).
+func paethPredictor(a, b, c byte) byte {
+	ia, ib, ic := int(a), int(b), int(c)
+	p := ia + ib - ic
+	pa := p - ia
+	if pa < 0 {
+		pa = -pa
+	}
+	pb := p - ib
+	if pb < 0 {
+		pb = -pb
+	}
+	pc := p - ic
+	if pc < 0 {
+		pc = -pc
+	}
+	if pa <= pb && pa <= pc {
+		return a
+	}
+	if pb <= pc {
+		return b
+	}
+	return c
 }
 
 func detectImageFormat(filter string, data []byte) string {

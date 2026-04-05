@@ -135,7 +135,24 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 			{Name: "BT", Args: nil},
 		}
 
-		if r.SyntheticItalic {
+		if r.Rotation != 0 {
+			rad := r.Rotation * math.Pi / 180
+			cosA, sinA := math.Cos(rad), math.Sin(rad)
+			a, b, c, d := cosA, sinA, -sinA, cosA
+			if r.SyntheticItalic {
+				// Combine italic shear with rotation
+				c += 0.33 * a
+				d += 0.33 * b
+			}
+			btOps = append(btOps, content.Op{
+				Name: "Tm",
+				Args: []model.Object{
+					model.Real(a), model.Real(b),
+					model.Real(c), model.Real(d),
+					model.Real(r.X), model.Real(r.Y),
+				},
+			})
+		} else if r.SyntheticItalic {
 			btOps = append(btOps, content.Op{
 				Name: "Tm",
 				Args: []model.Object{
@@ -160,6 +177,12 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 			)
 		}
 
+		if r.HorizontalScale != 0 && r.HorizontalScale != 100 {
+			btOps = append(btOps, content.Op{
+				Name: "Tz",
+				Args: []model.Object{model.Real(r.HorizontalScale)},
+			})
+		}
 		if r.LetterSpacing != 0 {
 			btOps = append(btOps, content.Op{
 				Name: "Tc",
@@ -282,7 +305,10 @@ func (b *DocumentBuilder) buildImageOps(page *pageSpec, pageHeight float64, imag
 			)
 		}
 		var a, bb, c, d, e, f float64
-		if im.RotateDeg != 0 {
+		// Prefer explicit matrix when provided
+		if im.Matrix != ([6]float64{}) {
+			a, bb, c, d, e, f = im.Matrix[0], im.Matrix[1], im.Matrix[2], im.Matrix[3], im.Matrix[4], im.Matrix[5]
+		} else if im.RotateDeg != 0 {
 			θ := im.RotateDeg * math.Pi / 180
 			cosθ := math.Cos(θ)
 			sinθ := math.Sin(θ)

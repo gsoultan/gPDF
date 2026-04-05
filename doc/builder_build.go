@@ -209,11 +209,30 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 				Content: contentBytes,
 			}
 			for i, im := range spec.ImageRuns {
+				// Create the main image XObject stream
+				var imgStream *model.Stream
 				if im.IsJPEG {
-					objs[imageStreamNums[i]] = b.jpegXObjectStream(im)
+					imgStream = b.jpegXObjectStream(im)
 				} else {
-					objs[imageStreamNums[i]] = b.imageXObjectStream(im)
+					imgStream = b.imageXObjectStream(im)
 				}
+				// If this image has a soft mask, allocate and write it, and link via /SMask
+				if im.HasMask && len(im.Mask) > 0 && im.MaskWidth > 0 && im.MaskHeight > 0 {
+					maskNum := nextNum
+					nextNum++
+					maskDict := model.Dict{
+						model.Name("Type"):             model.Name("XObject"),
+						model.Name("Subtype"):          model.Name("Image"),
+						model.Name("Width"):            model.Integer(int64(im.MaskWidth)),
+						model.Name("Height"):           model.Integer(int64(im.MaskHeight)),
+						model.Name("BitsPerComponent"): model.Integer(8),
+						model.Name("ColorSpace"):       model.Name("DeviceGray"),
+						model.Name("Length"):           model.Integer(int64(len(im.Mask))),
+					}
+					objs[maskNum] = &model.Stream{Dict: maskDict, Content: im.Mask}
+					imgStream.Dict[model.Name("SMask")] = model.Ref{ObjectNumber: maskNum}
+				}
+				objs[imageStreamNums[i]] = imgStream
 			}
 		}
 

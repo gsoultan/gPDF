@@ -2,8 +2,6 @@ package reader
 
 import (
 	"fmt"
-	"io"
-
 	"gpdf/model"
 )
 
@@ -354,13 +352,7 @@ func (d *pdfDocument) ContentPerPage() ([]string, error)     { return ExtractTex
 func (d *pdfDocument) Images() ([]ImageInfo, error)          { return ExtractImages(d) }
 func (d *pdfDocument) ImagesPerPage() ([][]ImageInfo, error) { return ExtractImagesPerPage(d) }
 func (d *pdfDocument) Layout() ([]PageLayout, error)         { return ExtractLayout(d) }
-func (d *pdfDocument) GenerateCode(opts CodeGenOptions) (GeneratedCode, error) {
-	return GenerateCode(d, opts)
-}
-func (d *pdfDocument) GenerateCodeTo(w io.Writer, opts CodeGenOptions) ([]GeneratedAsset, error) {
-	return GenerateCodeTo(d, w, opts)
-}
-func (d *pdfDocument) Replace(old, new string) error { return ReplaceContent(d, old, new) }
+func (d *pdfDocument) Replace(old, new string) error         { return ReplaceContent(d, old, new) }
 func (d *pdfDocument) Replaces(replacements map[string]string) error {
 	return ReplacesContent(d, replacements)
 }

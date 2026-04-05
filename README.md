@@ -1,33 +1,54 @@
 # gPDF
 
-## Code generation for large PDFs
+A library for reading, searching, and modifying PDF documents.
 
-For large input files, prefer streaming code generation to reduce peak memory usage.
+## Features
+
+- **Read Content**: Extract text, images, and layout information from PDF files.
+- **Search**: Find keywords across pages.
+- **Modify**: Replace text content and save back to PDF.
+- **Table Detection**: Identify table-like structures in PDF layouts.
+- **Image Extraction**: Extract images from PDF pages with color space conversion support.
+
+## Usage
+
+### Reading a PDF
 
 ```go
-assets, err := pdf.GenerateCodeTo(out, doc.CodeGenOptions{
-    PackageName:           "main",
-    FunctionName:          "BuildPDF",
-    EmbedImages:           true,
-    PreservePageSize:      true,
-    PreserveTextStyles:    true,
-    PreservePositions:     true,
-    PreserveTables:        true,
-    InlineImageLimit:      128 * 1024,
-    MaxDecodedStreamBytes: 256 * 1024 * 1024,
-    MaxImageBytes:         32 * 1024 * 1024,
-    MaxOpsPerPage:         1_000_000,
-})
+pdf, err := doc.Open("example.pdf")
 if err != nil {
-    // handle error
+    log.Fatal(err)
 }
+defer pdf.Close()
 
-// When an image exceeds InlineImageLimit, bytes are emitted in assets.
-_ = assets
+text, err := pdf.ReadContent()
+if err == nil {
+    fmt.Println(text)
+}
 ```
 
-### Notes
+### Searching and Replacing
 
-- `GenerateCode` is still available and returns the full generated source as `GeneratedCode.GoSource`.
-- `GenerateCodeTo` streams output to `io.Writer` and returns optional external assets for large images.
-- Extraction guardrails (`MaxDecodedStreamBytes`, `MaxImageBytes`, `MaxOpsPerPage`) protect against oversized content during code generation.
+```go
+err := pdf.Replace("Old Text", "New Text")
+if err != nil {
+    log.Fatal(err)
+}
+
+err = pdf.SaveToFile("modified.pdf")
+```
+
+### Table Detection
+
+```go
+tables, err := pdf.ReadTables()
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, pageTables := range tables {
+    for _, table := range pageTables {
+        fmt.Printf("Table at (%f, %f)\n", table.X, table.Y)
+    }
+}
+```

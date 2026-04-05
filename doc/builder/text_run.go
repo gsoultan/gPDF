@@ -12,10 +12,13 @@ type TextRun struct {
 	TextColorRGB    [3]float64
 	UseDefaultColor bool
 
-	Underline     bool
-	Strikethrough bool
-	LetterSpacing float64
-	WordSpacing   float64
+	Underline       bool
+	Strikethrough   bool
+	LetterSpacing   float64
+	WordSpacing     float64
+	HorizontalScale float64 // percent, 100 = normal
+
+	Rotation float64 // Degrees counter-clockwise; 0 = upright
 
 	SyntheticBold   bool
 	SyntheticItalic bool

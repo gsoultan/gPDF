@@ -92,7 +92,7 @@ func (e *Encoder) writeObject(obj model.Object) error {
 
 func writeLiteralString(w io.Writer, s string) {
 	io.WriteString(w, "(")
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		switch c {
 		case '\\', '(', ')':
@@ -120,7 +120,7 @@ func writeHexString(w io.Writer, b []byte) {
 
 func escapeContentName(s string) string {
 	var b bytes.Buffer
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if c <= ' ' || c >= 127 || c == '#' || c == '/' || c == '(' || c == ')' || c == '<' || c == '>' || c == '[' || c == ']' || c == '%' {
 			fmt.Fprintf(&b, "#%02x", c)

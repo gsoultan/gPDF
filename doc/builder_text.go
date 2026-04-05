@@ -324,6 +324,98 @@ func (b *DocumentBuilder) DrawTextColored(textStr string, x, y float64, fontName
 	return b.drawTextColoredAt(b.lastPageIndex(), textStr, x, y, fontName, fontSize, color, 0)
 }
 
+// DrawTextWithSpacing draws text at (x, y) with explicit color, letter and word spacing.
+// This is useful for reconstructing PDFs where Tc/Tw were used and must be preserved.
+func (b *DocumentBuilder) DrawTextWithSpacing(textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing, wordSpacing float64) *DocumentBuilder {
+	idx := b.lastPageIndex()
+	if !b.pc.validPageIndex(idx) {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	segments := b.fc.resolveFont(textStr, fontName)
+	currentX := x
+	for _, seg := range segments {
+		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing)
+		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			TextColorRGB:  [3]float64{color.R, color.G, color.B},
+			LetterSpacing: letterSpacing,
+			WordSpacing:   wordSpacing,
+		})
+		// Advance by width plus extra spacing for spaces (already accounted in textWidthStyle);
+		// since textWidthStyle included wordSpacing, here we only move by segWidth.
+		currentX += segWidth
+	}
+	return b
+}
+
+// DrawTextWithSpacingScale is like DrawTextWithSpacing but also sets HorizontalScale (Tz percent).
+func (b *DocumentBuilder) DrawTextWithSpacingScale(textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing, wordSpacing, horizontalScale float64) *DocumentBuilder {
+	idx := b.lastPageIndex()
+	if !b.pc.validPageIndex(idx) {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	if horizontalScale == 0 {
+		horizontalScale = 100
+	}
+	segments := b.fc.resolveFont(textStr, fontName)
+	currentX := x
+	for _, seg := range segments {
+		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing) * horizontalScale / 100
+		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			TextColorRGB:    [3]float64{color.R, color.G, color.B},
+			LetterSpacing:   letterSpacing,
+			WordSpacing:     wordSpacing,
+			HorizontalScale: horizontalScale,
+		})
+		currentX += segWidth
+	}
+	return b
+}
+
+// DrawTextRotated draws text at (x, y) rotated by deg degrees counter-clockwise.
+// It uses DrawTextWithSpacingScale defaults (letterSpacing=0, wordSpacing=0, horizontalScale=100).
+func (b *DocumentBuilder) DrawTextRotated(textStr string, x, y float64, fontName string, fontSize float64, color Color, deg float64) *DocumentBuilder {
+	idx := b.lastPageIndex()
+	if !b.pc.validPageIndex(idx) {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	segments := b.fc.resolveFont(textStr, fontName)
+	currentX := x
+	for _, seg := range segments {
+		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, 0, 0)
+		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+			Text:         seg.text,
+			X:            currentX,
+			Y:            y,
+			FontName:     seg.fontName,
+			FontSize:     fontSize,
+			TextColorRGB: [3]float64{color.R, color.G, color.B},
+			Rotation:     deg,
+		})
+		currentX += segWidth
+	}
+	return b
+}
+
 func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing float64) *DocumentBuilder {
 	if !b.pc.validPageIndex(pageIndex) {
 		return b

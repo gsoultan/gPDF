@@ -39,8 +39,9 @@ func ExtractLayout(src contentSource) ([]PageLayout, error) {
 			ops, src, parser, resources,
 			make(map[model.Ref]struct{}, 4),
 			make(map[model.Ref]*toUnicodeDecoder, 4),
+			nil, // Initial state
 		)
-		pl.Blocks = blocks
+		pl.Blocks = MergeBlocks(blocks)
 		layouts[i] = pl
 	}
 	return layouts, nil
@@ -54,8 +55,13 @@ type layoutState struct {
 	// current text line matrix (for Td/TD/T*)
 	tlX, tlY float64
 	// active font info
-	fontName string
-	fontSize float64
+	fontName     string // Resource name (e.g., F18) for decoder lookup
+	resolvedFont string // BaseFont name (e.g., Helvetica) for output
+	fontSize     float64
+	// resolved metrics for the active font
+	fontMetrics fontInfo
+	// last computed text advance (in text space units, before CTM)
+	lastAdvance float64
 	// non-stroking colour (fill) – RGB [0,1]
 	colorR, colorG, colorB float64
 	// leading (TL)
@@ -64,11 +70,16 @@ type layoutState struct {
 	charSpacing float64
 	wordSpacing float64
 	horizScale  float64
+	// text rise (Ts) and render mode (Tr)
+	textRise   float64
+	textRender int
 	// graphics state stack
+	ctm   matrix
 	stack []layoutStateSnapshot
 }
 
 type layoutStateSnapshot struct {
+	ctm                    matrix
 	colorR, colorG, colorB float64
 }
 
@@ -76,6 +87,7 @@ func newLayoutState() *layoutState {
 	return &layoutState{
 		horizScale: 100,
 		colorR:     0, colorG: 0, colorB: 0,
+		ctm: identityMatrix(),
 	}
 }
 
@@ -131,20 +143,26 @@ func applyTextShowOp(
 	case "Tj":
 		if len(op.Args) > 0 {
 			decoder := resolveFontDecoder(doc, resources, model.Name(state.fontName), fontDecoders)
+			// decode display text for output
 			text := decodeOpArg(op.Args[0], decoder)
+			// compute precise advance based on font metrics and spacing
+			state.lastAdvance = advanceForTextObject(op.Args[0], state, decoder)
 			if text != "" {
 				blocks = append(blocks, makeBlock(text, state))
-				state.tmX += estimateWidth(text, state)
 			}
+			state.tmX += state.lastAdvance
+			state.lastAdvance = 0
 		}
 	case "TJ":
 		if len(op.Args) > 0 {
 			decoder := resolveFontDecoder(doc, resources, model.Name(state.fontName), fontDecoders)
 			text, advance := decodeTJArg(op.Args[0], decoder, state)
+			state.lastAdvance = advance
 			if text != "" {
 				blocks = append(blocks, makeBlock(text, state))
-				state.tmX += advance
 			}
+			state.tmX += state.lastAdvance
+			state.lastAdvance = 0
 		}
 	case "'":
 		if len(op.Args) > 0 {
@@ -152,10 +170,12 @@ func applyTextShowOp(
 			state.tmX, state.tmY = state.tlX, state.tlY
 			decoder := resolveFontDecoder(doc, resources, model.Name(state.fontName), fontDecoders)
 			text := decodeOpArg(op.Args[0], decoder)
+			state.lastAdvance = advanceForTextObject(op.Args[0], state, decoder)
 			if text != "" {
 				blocks = append(blocks, makeBlock(text, state))
-				state.tmX += estimateWidth(text, state)
 			}
+			state.tmX += state.lastAdvance
+			state.lastAdvance = 0
 		}
 	case "\"":
 		if len(op.Args) >= 3 {
@@ -165,10 +185,12 @@ func applyTextShowOp(
 			state.tmX, state.tmY = state.tlX, state.tlY
 			decoder := resolveFontDecoder(doc, resources, model.Name(state.fontName), fontDecoders)
 			text := decodeOpArg(op.Args[len(op.Args)-1], decoder)
+			state.lastAdvance = advanceForTextObject(op.Args[len(op.Args)-1], state, decoder)
 			if text != "" {
 				blocks = append(blocks, makeBlock(text, state))
-				state.tmX += estimateWidth(text, state)
 			}
+			state.tmX += state.lastAdvance
+			state.lastAdvance = 0
 		}
 	}
 	return blocks
@@ -177,15 +199,19 @@ func applyTextShowOp(
 func applyGraphicsStateOp(state *layoutState, op content.Op) {
 	switch op.Name {
 	case "cm":
-		// Concat matrix — not tracked for layout extraction; no-op
+		if len(op.Args) >= 6 {
+			state.ctm = matrixFromObjects(op.Args).multiply(state.ctm)
+		}
 	case "q":
 		state.stack = append(state.stack, layoutStateSnapshot{
+			ctm:    state.ctm,
 			colorR: state.colorR, colorG: state.colorG, colorB: state.colorB,
 		})
 	case "Q":
 		if len(state.stack) > 0 {
 			top := state.stack[len(state.stack)-1]
 			state.stack = state.stack[:len(state.stack)-1]
+			state.ctm = top.ctm
 			state.colorR = top.colorR
 			state.colorG = top.colorG
 			state.colorB = top.colorB
@@ -193,7 +219,7 @@ func applyGraphicsStateOp(state *layoutState, op content.Op) {
 	}
 }
 
-func applyFontOp(state *layoutState, op content.Op) {
+func applyFontOp(state *layoutState, op content.Op, resources model.Dict, src contentSource) {
 	if op.Name != "Tf" || len(op.Args) < 2 {
 		return
 	}
@@ -201,6 +227,8 @@ func applyFontOp(state *layoutState, op content.Op) {
 		state.fontName = string(n)
 	}
 	state.fontSize = toFloat64(op.Args[1])
+	// try to resolve precise font metrics for accurate advance calculations
+	state.fontMetrics = resolveFontInfo(src, resources, op.Args[0])
 }
 
 func applyColorOp(state *layoutState, op content.Op) {
@@ -257,8 +285,11 @@ func extractBlocksFromOps(
 	resources model.Dict,
 	visited map[model.Ref]struct{},
 	fontDecoders map[model.Ref]*toUnicodeDecoder,
+	st *layoutState,
 ) []TextBlock {
-	st := newLayoutState()
+	if st == nil {
+		st = newLayoutState()
+	}
 	inText := false
 	var blocks []TextBlock
 
@@ -269,8 +300,9 @@ func extractBlocksFromOps(
 		case "rg", "g", "RG", "G", "k", "K":
 			applyColorOp(st, op)
 		case "Tf":
-			applyFontOp(st, op)
+			applyFontOp(st, op, resources, src)
 			_ = resolveFontDecoder(src, resources, op.Args[0], fontDecoders)
+			st.resolvedFont = resolveFontName(src, resources, op.Args[0])
 		case "Tm", "Td", "TD", "T*":
 			applyTextMatrixOp(st, op, inText)
 		case "Tj", "TJ", "'", "\"":
@@ -287,6 +319,25 @@ func extractBlocksFromOps(
 		case "TL":
 			if len(op.Args) >= 1 {
 				st.leading = toFloat64(op.Args[0])
+			}
+		case "Ts":
+			if len(op.Args) >= 1 {
+				st.textRise = toFloat64(op.Args[0])
+			}
+		case "Tr":
+			if len(op.Args) >= 1 {
+				// Tr integer render mode per PDF spec (0 fill, 1 stroke, 2 fill+stroke, 3 invisible, etc.)
+				// We record it for potential downstream use; extraction still captures text content.
+				switch v := op.Args[0].(type) {
+				case model.Integer:
+					st.textRender = int(v)
+				case model.Real:
+					if v >= 0 {
+						st.textRender = int(v)
+					} else {
+						st.textRender = 0
+					}
+				}
 			}
 		case "Tc":
 			if len(op.Args) >= 1 {
@@ -310,7 +361,7 @@ func extractBlocksFromOps(
 				st.colorB = toFloat64(op.Args[2])
 			}
 		case "Do":
-			nested := extractBlocksFromXObject(op.Args, src, parser, resources, visited, fontDecoders)
+			nested := extractBlocksFromXObject(op.Args, src, parser, resources, visited, fontDecoders, st)
 			blocks = append(blocks, nested...)
 		}
 	}
@@ -322,29 +373,74 @@ func makeBlock(text string, st *layoutState) TextBlock {
 	if fs <= 0 {
 		fs = 12
 	}
-	w := estimateWidth(text, st)
+	// Prefer the precise width computed during text-show op, if available
+	w := st.lastAdvance
+	if w <= 0 {
+		w = estimateWidth(text, st)
+	}
+	font := st.resolvedFont
+	if font == "" {
+		font = st.fontName
+	}
+
+	// Apply text rise before CTM: baseline shifted by Ts in text space
+	yWithRise := st.tmY + st.textRise
+	// Apply CTM to get page-space coordinates
+	px, py := st.ctm.apply(st.tmX, yWithRise)
+
 	return TextBlock{
 		Text:   text,
-		X:      st.tmX,
-		Y:      st.tmY,
-		Width:  w,
-		Height: fs,
+		X:      px,
+		Y:      py,
+		Width:  w * st.ctm.scaling(),
+		Height: fs * st.ctm.scaling(),
 		Style: TextStyle{
-			FontName: st.fontName,
-			FontSize: fs,
-			ColorR:   st.colorR,
-			ColorG:   st.colorG,
-			ColorB:   st.colorB,
+			FontName:    st.fontName,
+			BaseFont:    font,
+			FontSize:    fs * st.ctm.scaling(),
+			CharSpacing: st.charSpacing,
+			WordSpacing: st.wordSpacing,
+			HorizontalScale: func() float64 {
+				if st.horizScale == 0 {
+					return 100
+				}
+				return st.horizScale
+			}(),
+			Leading: st.leading,
+			ColorR:  st.colorR,
+			ColorG:  st.colorG,
+			ColorB:  st.colorB,
 		},
 	}
 }
 
 func estimateWidth(text string, st *layoutState) float64 {
+	// If we have resolved metrics, compute width from glyph widths.
+	if st != nil && len(st.fontMetrics.Widths) > 0 && st.fontSize > 0 {
+		// Best-effort: use rune-by-rune and treat space specially for Tw application.
+		var units float64
+		fs := st.fontSize
+		for _, r := range text {
+			code := int(r)
+			// PDF word spacing Tw applies only to the SPACE character in simple fonts.
+			if r == ' ' {
+				units += st.wordSpacing
+			}
+			w := st.fontMetrics.Widths[code]
+			if w == 0 {
+				w = st.fontMetrics.DefaultWidth
+			}
+			// Convert font units (1/1000 em) to text space using font size and add char spacing
+			units += (w/1000.0)*fs + st.charSpacing
+		}
+		return units * st.horizScale / 100
+	}
+	// Fallback heuristic
 	fs := st.fontSize
 	if fs <= 0 {
 		fs = 12
 	}
-	return float64(len([]rune(text))) * fs * 0.6 * st.horizScale / 100
+	return float64(len([]rune(text))) * fs * 0.5 * st.horizScale / 100
 }
 
 func decodeOpArg(arg model.Object, decoder *toUnicodeDecoder) string {
@@ -365,28 +461,19 @@ func decodeTJArg(arg model.Object, decoder *toUnicodeDecoder, st *layoutState) (
 	for _, elem := range arr {
 		switch item := elem.(type) {
 		case model.String:
-			text := decodeTextBytes([]byte(item), decoder)
+			b := []byte(item)
+			text := decodeTextBytes(b, decoder)
 			sb.WriteString(text)
-			advance += estimateWidth(text, st)
+			advance += advanceForBytes(b, st, decoder)
 		case model.Integer:
-			// negative kerning adjustment → word gap if large enough
-			if item <= -120 {
-				sb.WriteByte(' ')
-				advance += st.fontSize * 0.3
-			} else {
-				// positive or small negative: adjust advance
-				advance -= float64(item) * st.fontSize / 1000
-			}
+			// PDF spec: a number adjusts the text position by -value/1000 * fontSize
+			advance += (-float64(item)) * st.fontSize / 1000
 		case model.Real:
-			if item <= -120 {
-				sb.WriteByte(' ')
-				advance += st.fontSize * 0.3
-			} else {
-				advance -= float64(item) * st.fontSize / 1000
-			}
+			advance += (-float64(item)) * st.fontSize / 1000
 		}
 	}
-	return sb.String(), advance
+	// Apply horizontal scale
+	return sb.String(), advance * st.horizScale / 100
 }
 
 func extractBlocksFromXObject(
@@ -396,6 +483,7 @@ func extractBlocksFromXObject(
 	resources model.Dict,
 	visited map[model.Ref]struct{},
 	fontDecoders map[model.Ref]*toUnicodeDecoder,
+	st *layoutState,
 ) []TextBlock {
 	if len(args) == 0 || resources == nil {
 		return nil
@@ -435,5 +523,73 @@ func extractBlocksFromXObject(
 	if r, ok := resolveDictObject(src, xObject.Dict[model.Name("Resources")]); ok {
 		nestedResources = mergeResourceDict(resources, r)
 	}
-	return extractBlocksFromOps(nestedOps, src, parser, nestedResources, visited, fontDecoders)
+
+	// Create child state with inherited graphics/color state
+	childState := &layoutState{
+		ctm:         st.ctm,
+		colorR:      st.colorR,
+		colorG:      st.colorG,
+		colorB:      st.colorB,
+		horizScale:  100,
+		fontSize:    st.fontSize,
+		fontName:    st.fontName,
+		wordSpacing: st.wordSpacing,
+		charSpacing: st.charSpacing,
+		leading:     st.leading,
+	}
+
+	if formMatrixArray, ok := xObject.Dict[model.Name("Matrix")].(model.Array); ok && len(formMatrixArray) >= 6 {
+		formMatrix := matrixFromObjects(formMatrixArray)
+		childState.ctm = formMatrix.multiply(childState.ctm)
+	}
+
+	return extractBlocksFromOps(nestedOps, src, parser, nestedResources, visited, fontDecoders, childState)
+}
+
+// advanceForTextObject computes precise advance for a text-show operand (model.String),
+// taking into account font metrics and spacing. If metrics are unavailable, falls back
+// to heuristic estimateWidth.
+func advanceForTextObject(obj model.Object, st *layoutState, decoder *toUnicodeDecoder) float64 {
+	if s, ok := obj.(model.String); ok {
+		return advanceForBytes([]byte(s), st, decoder)
+	}
+	// Fallback when operand is not a string (should not happen for Tj/'/")
+	return estimateWidth(decodeOpArg(obj, decoder), st)
+}
+
+// advanceForBytes computes the text-space advance for a raw PDF string using
+// the active font metrics, char/word spacing, and horizontal scaling.
+func advanceForBytes(b []byte, st *layoutState, decoder *toUnicodeDecoder) float64 {
+	if st == nil {
+		return 0
+	}
+	fs := st.fontSize
+	if fs <= 0 {
+		fs = 12
+	}
+	var adv float64
+	if len(st.fontMetrics.Widths) > 0 {
+		// Best-effort: iterate bytes, apply widths in 1/1000 em units.
+		for _, by := range b {
+			// Word spacing Tw applies to SPACE (0x20) for simple fonts.
+			if by == 0x20 {
+				adv += st.wordSpacing
+			}
+			w := st.fontMetrics.Widths[int(by)]
+			if w == 0 {
+				w = st.fontMetrics.DefaultWidth
+			}
+			adv += (w/1000.0)*fs + st.charSpacing
+		}
+		return adv * st.horizScale / 100
+	}
+	// Fallback heuristic when no metrics known
+	// Decode to runes to approximate spacing
+	text := ""
+	if decoder != nil {
+		text = decodeTextBytes(b, decoder)
+	} else {
+		text = string(b)
+	}
+	return estimateWidth(text, st)
 }

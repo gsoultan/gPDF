@@ -14,12 +14,21 @@ type vectorExtractor struct {
 	strokeColor ColorRGB
 	fillColor   ColorRGB
 	lineWidth   float64
+	lineCap     int
+	lineJoin    int
+	dashArray   []float64
+	dashPhase   float64
+	strokeOpac  float64
+	fillOpac    float64
 	pathLines   []vectorLine
 	pathRects   []vectorRect
 	currentX    float64
 	currentY    float64
 	hasCurrent  bool
-	shapes      []VectorShape
+	// simple rectangular clipping support
+	clipActive bool
+	clipRect   vectorRect
+	shapes     []VectorShape
 }
 
 type vectorLine struct {
@@ -68,6 +77,8 @@ func newVectorExtractor() *vectorExtractor {
 		ctm:         identityMatrix(),
 		strokeColor: ColorRGB{},
 		fillColor:   ColorRGB{},
+		strokeOpac:  1.0,
+		fillOpac:    1.0,
 	}
 }
 
@@ -86,7 +97,7 @@ func (v *vectorExtractor) extract(src contentSource, parser content.Parser, ops 
 		case "cm":
 			args := collectFloatArgs(op.Args)
 			if len(args) >= 6 {
-				v.ctm = v.ctm.multiply(matrixFromArgs(args))
+				v.ctm = matrixFromArgs(args).multiply(v.ctm)
 			}
 		case "RG":
 			v.strokeColor = colorFromArgs(op.Args)
@@ -95,6 +106,24 @@ func (v *vectorExtractor) extract(src contentSource, parser content.Parser, ops 
 		case "w":
 			if len(op.Args) >= 1 {
 				v.lineWidth = toFloat64(op.Args[0])
+			}
+		case "J":
+			if len(op.Args) >= 1 {
+				v.lineCap = int(toFloat64(op.Args[0]))
+			}
+		case "j":
+			if len(op.Args) >= 1 {
+				v.lineJoin = int(toFloat64(op.Args[0]))
+			}
+		case "d":
+			if len(op.Args) >= 2 {
+				if arr, ok := op.Args[0].(model.Array); ok {
+					v.dashArray = v.dashArray[:0]
+					for _, a := range arr {
+						v.dashArray = append(v.dashArray, toFloat64(a))
+					}
+				}
+				v.dashPhase = toFloat64(op.Args[1])
 			}
 		case "m":
 			if len(op.Args) < 2 {
@@ -105,6 +134,26 @@ func (v *vectorExtractor) extract(src contentSource, parser content.Parser, ops 
 			v.currentX = toFloat64(op.Args[0])
 			v.currentY = toFloat64(op.Args[1])
 			v.hasCurrent = true
+		case "W", "W*":
+			// Establish a clipping path from the current rect path if available; otherwise approximate from lines bbox
+			if len(v.pathRects) > 0 {
+				// Use the last rect
+				r := v.pathRects[len(v.pathRects)-1]
+				v.clipActive = true
+				v.clipRect = r
+			} else if len(v.pathLines) > 0 && v.hasCurrent {
+				// Compute bbox in user space
+				minX, minY := v.currentX, v.currentY
+				maxX, maxY := v.currentX, v.currentY
+				for _, ln := range v.pathLines {
+					minX = min(minX, min(ln.x1, ln.x2))
+					minY = min(minY, min(ln.y1, ln.y2))
+					maxX = max(maxX, max(ln.x1, ln.x2))
+					maxY = max(maxY, max(ln.y1, ln.y2))
+				}
+				v.clipActive = true
+				v.clipRect = vectorRect{x: minX, y: minY, w: maxX - minX, h: maxY - minY}
+			}
 		case "l":
 			if len(op.Args) < 2 || !v.hasCurrent {
 				continue
@@ -136,6 +185,26 @@ func (v *vectorExtractor) extract(src contentSource, parser content.Parser, ops 
 			v.hasCurrent = false
 		case "Do":
 			v.walkFormXObject(src, parser, op.Args, resources, visited)
+		case "gs":
+			// transparency from ExtGState
+			if len(op.Args) > 0 {
+				if name, ok := op.Args[0].(model.Name); ok {
+					if extGState, ok := resolveDictObject(src, resources[model.Name("ExtGState")]); ok {
+						if gs, ok := resolveDictObject(src, extGState[name]); ok {
+							if ca, ok := gs[model.Name("ca")].(model.Real); ok {
+								v.fillOpac = float64(ca)
+							} else if ca, ok := gs[model.Name("ca")].(model.Integer); ok {
+								v.fillOpac = float64(ca)
+							}
+							if CA, ok := gs[model.Name("CA")].(model.Real); ok {
+								v.strokeOpac = float64(CA)
+							} else if CA, ok := gs[model.Name("CA")].(model.Integer); ok {
+								v.strokeOpac = float64(CA)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	return v.shapes
@@ -202,32 +271,54 @@ func (v *vectorExtractor) flushPath(stroke bool, fill bool) {
 		x1, y1 := v.ctm.apply(line.x1, line.y1)
 		x2, y2 := v.ctm.apply(line.x2, line.y2)
 		v.shapes = append(v.shapes, VectorShape{
-			Kind:        "line",
-			X1:          x1,
-			Y1:          y1,
-			X2:          x2,
-			Y2:          y2,
-			LineWidth:   effectiveWidth,
-			Stroke:      stroke,
-			Fill:        fill,
-			StrokeColor: v.strokeColor,
-			FillColor:   v.fillColor,
+			Kind:          "line",
+			X1:            x1,
+			Y1:            y1,
+			X2:            x2,
+			Y2:            y2,
+			LineWidth:     effectiveWidth,
+			Stroke:        stroke,
+			Fill:          fill,
+			StrokeColor:   v.strokeColor,
+			FillColor:     v.fillColor,
+			DashArray:     slices.Clone(v.dashArray),
+			DashPhase:     v.dashPhase,
+			LineCap:       v.lineCap,
+			LineJoin:      v.lineJoin,
+			StrokeOpacity: v.strokeOpac,
+			FillOpacity:   v.fillOpac,
+			Clip:          v.clipActive,
+			ClipX:         func() float64 { x, _ := v.ctm.apply(v.clipRect.x, v.clipRect.y); return x }(),
+			ClipY:         func() float64 { _, y := v.ctm.apply(v.clipRect.x, v.clipRect.y); return y }(),
+			ClipW:         v.clipRect.w * v.ctm.scaling(),
+			ClipH:         v.clipRect.h * v.ctm.scaling(),
 		})
 	}
 	for _, rect := range v.pathRects {
 		x1, y1 := v.ctm.apply(rect.x, rect.y)
 		x2, y2 := v.ctm.apply(rect.x+rect.w, rect.y+rect.h)
 		v.shapes = append(v.shapes, VectorShape{
-			Kind:        "rect",
-			X1:          min(x1, x2),
-			Y1:          min(y1, y2),
-			X2:          max(x1, x2),
-			Y2:          max(y1, y2),
-			LineWidth:   effectiveWidth,
-			Stroke:      stroke,
-			Fill:        fill,
-			StrokeColor: v.strokeColor,
-			FillColor:   v.fillColor,
+			Kind:          "rect",
+			X1:            min(x1, x2),
+			Y1:            min(y1, y2),
+			X2:            max(x1, x2),
+			Y2:            max(y1, y2),
+			LineWidth:     effectiveWidth,
+			Stroke:        stroke,
+			Fill:          fill,
+			StrokeColor:   v.strokeColor,
+			FillColor:     v.fillColor,
+			DashArray:     slices.Clone(v.dashArray),
+			DashPhase:     v.dashPhase,
+			LineCap:       v.lineCap,
+			LineJoin:      v.lineJoin,
+			StrokeOpacity: v.strokeOpac,
+			FillOpacity:   v.fillOpac,
+			Clip:          v.clipActive,
+			ClipX:         func() float64 { x, _ := v.ctm.apply(v.clipRect.x, v.clipRect.y); return x }(),
+			ClipY:         func() float64 { _, y := v.ctm.apply(v.clipRect.x, v.clipRect.y); return y }(),
+			ClipW:         v.clipRect.w * v.ctm.scaling(),
+			ClipH:         v.clipRect.h * v.ctm.scaling(),
 		})
 	}
 	v.pathLines = nil

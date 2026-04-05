@@ -9,7 +9,6 @@ type Document interface {
 	ContentSearcher
 	ImageReader
 	LayoutReader
-	CodeGenerator
 	Saver
 	Close() error
 }

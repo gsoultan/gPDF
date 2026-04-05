@@ -12,6 +12,20 @@ type VectorShape struct {
 	Fill        bool
 	StrokeColor ColorRGB
 	FillColor   ColorRGB
+	// Stroke style details
+	DashArray []float64
+	DashPhase float64
+	LineCap   int // 0=Butt,1=Round,2=Square
+	LineJoin  int // 0=Miter,1=Round,2=Bevel
+	// Opacity (0..1). 0 = default (treated as 1 by codegen)
+	StrokeOpacity float64
+	FillOpacity   float64
+	// Optional rectangular clip applied to this shape
+	Clip  bool
+	ClipX float64
+	ClipY float64
+	ClipW float64
+	ClipH float64
 }
 
 // ColorRGB represents an RGB color triplet.

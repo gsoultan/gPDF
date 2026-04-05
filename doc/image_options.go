@@ -36,11 +36,13 @@ func (b *DocumentBuilder) DrawImageWith(opts ImageOptions) *DocumentBuilder {
 	run := imageRun{
 		X: opts.X, Y: opts.Y,
 		WidthPt: opts.Width, HeightPt: opts.Height,
-		Raw: opts.Data, WidthPx: opts.PixelWidth, HeightPx: opts.PixelHeight,
+		Matrix: opts.Matrix,
+		Raw:    opts.Data, WidthPx: opts.PixelWidth, HeightPx: opts.PixelHeight,
 		BitsPerComponent: bpc, ColorSpace: colorSpace,
 		IsJPEG: opts.IsJPEG, Opacity: opts.Opacity, RotateDeg: opts.RotateDeg,
 		ClipCircle: opts.ClipCircle, ClipCX: opts.ClipCX, ClipCY: opts.ClipCY, ClipR: opts.ClipRadius,
 		IsArtifact: opts.IsArtifact,
+		HasMask:    opts.HasMask, Mask: opts.Mask, MaskWidth: opts.MaskWidth, MaskHeight: opts.MaskHeight,
 	}
 	b.pc.pages[pageIndex].ImageRuns = append(b.pc.pages[pageIndex].ImageRuns, run)
 	return b

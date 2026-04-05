@@ -88,17 +88,3 @@ func TestValidateRejectsInvalidLevel(t *testing.T) {
 		t.Fatalf("expected ErrInvalidValidationLevel, got %v", err)
 	}
 }
-
-func TestValidateCodeGenOptions(t *testing.T) {
-	err := ValidateCodeGenOptions(CodeGenOptions{PackageName: "bad-name"})
-	if err == nil {
-		t.Fatal("expected invalid package name error")
-	}
-	if !errors.Is(err, ErrInvalidCodeGenOptions) {
-		t.Fatalf("expected ErrInvalidCodeGenOptions, got %v", err)
-	}
-
-	if err := ValidateCodeGenOptions(CodeGenOptions{PackageName: "main", FunctionName: "BuildPDF"}); err != nil {
-		t.Fatalf("expected valid options, got %v", err)
-	}
-}

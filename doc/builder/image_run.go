@@ -4,6 +4,8 @@ package builder
 type ImageRun struct {
 	X, Y              float64
 	WidthPt, HeightPt float64
+	// Optional exact placement matrix (a,b,c,d,e,f). When non-zero, overrides X/Y/WidthPt/HeightPt.
+	Matrix            [6]float64
 	Raw               []byte
 	WidthPx, HeightPx int
 	BitsPerComponent  int
@@ -17,6 +19,12 @@ type ImageRun struct {
 
 	Opacity   float64
 	RotateDeg float64
+
+	// Optional soft mask (alpha channel)
+	HasMask    bool
+	Mask       []byte
+	MaskWidth  int
+	MaskHeight int
 
 	MCID    int
 	HasMCID bool

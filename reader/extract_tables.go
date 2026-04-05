@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type candidateRow struct {
+	yVal   float64
+	blocks []TextBlock
+}
+
 // DetectTables analyses the positioned TextBlocks in each PageLayout and returns
 // any table-like grids it finds (one slice of Table per page).
 //
@@ -23,15 +28,66 @@ func DetectTables(layouts []PageLayout) [][]Table {
 }
 
 const (
-	rowTol  = 4.0 // points: Y values within this range belong to the same row
 	colTol  = 6.0 // points: X values within this range belong to the same column
 	minCols = 2   // minimum columns to consider a row part of a table
 	minRows = 2   // minimum rows to form a table
 )
 
-// yBucket rounds y to the nearest rowTol bucket centre.
-func yBucket(y float64) int {
-	return int((y + rowTol/2) / rowTol)
+// inferTableBorder searches pl.Shapes for rect or line shapes that coincide
+// with tbl's bounding box and returns border styling when found.
+func inferTableBorder(tbl Table, shapes []VectorShape) (hasBorder bool, color ColorRGB, width float64) {
+	const snapTol = 12.0 // points: how close a shape edge must be to the table edge
+	best := -1.0
+	for _, s := range shapes {
+		if !s.Stroke {
+			continue
+		}
+		switch s.Kind {
+		case "rect":
+			// Accept rects that surround or closely match the table bounds
+			dx1 := s.X1 - tbl.X
+			if dx1 < 0 {
+				dx1 = -dx1
+			}
+			dy1 := s.Y1 - tbl.Y
+			if dy1 < 0 {
+				dy1 = -dy1
+			}
+			dx2 := s.X2 - (tbl.X + tbl.Width)
+			if dx2 < 0 {
+				dx2 = -dx2
+			}
+			dy2 := s.Y2 - (tbl.Y + tbl.Height)
+			if dy2 < 0 {
+				dy2 = -dy2
+			}
+			if dx1 <= snapTol && dy1 <= snapTol && dx2 <= snapTol && dy2 <= snapTol {
+				score := s.LineWidth
+				if score > best {
+					best = score
+					color = s.StrokeColor
+					width = s.LineWidth
+					hasBorder = true
+				}
+			}
+		case "line":
+			// Accept horizontal or vertical lines that lie within the table area
+			inX1 := s.X1 >= tbl.X-snapTol && s.X1 <= tbl.X+tbl.Width+snapTol
+			inX2 := s.X2 >= tbl.X-snapTol && s.X2 <= tbl.X+tbl.Width+snapTol
+			inY1 := s.Y1 >= tbl.Y-snapTol && s.Y1 <= tbl.Y+tbl.Height+snapTol
+			inY2 := s.Y2 >= tbl.Y-snapTol && s.Y2 <= tbl.Y+tbl.Height+snapTol
+			if inX1 && inX2 && inY1 && inY2 {
+				score := s.LineWidth
+				if score > best {
+					best = score
+					color = s.StrokeColor
+					width = s.LineWidth
+					hasBorder = true
+				}
+			}
+		}
+	}
+	return
 }
 
 func detectTablesOnPage(pl PageLayout) []Table {
@@ -41,7 +97,6 @@ func detectTablesOnPage(pl PageLayout) []Table {
 
 	// ── Step 1: group blocks by Y bucket ────────────────────────────────────
 	type rowEntry struct {
-		yKey   int
 		yVal   float64
 		blocks []TextBlock
 	}
@@ -49,18 +104,17 @@ func detectTablesOnPage(pl PageLayout) []Table {
 	for _, b := range pl.Blocks {
 		key := yBucket(b.Y)
 		if rowMap[key] == nil {
-			rowMap[key] = &rowEntry{yKey: key, yVal: b.Y}
+			rowMap[key] = &rowEntry{yVal: b.Y}
 		}
 		rowMap[key].blocks = append(rowMap[key].blocks, b)
 	}
 
-	// Sort rows top-to-bottom (higher Y = higher on page in PDF coordinates).
+	// Sort rows top-to-bottom
 	rows := make([]*rowEntry, 0, len(rowMap))
 	for _, r := range rowMap {
 		rows = append(rows, r)
 	}
 	slices.SortFunc(rows, func(a, b *rowEntry) int {
-		// descending Y (top of page first)
 		if a.yVal > b.yVal {
 			return -1
 		}
@@ -71,14 +125,9 @@ func detectTablesOnPage(pl PageLayout) []Table {
 	})
 
 	// ── Step 2: collect candidate rows (≥ minCols blocks) ───────────────────
-	type candidateRow struct {
-		yVal   float64
-		blocks []TextBlock
-	}
 	var candidates []candidateRow
 	for _, r := range rows {
 		if len(r.blocks) >= minCols {
-			// sort blocks left-to-right within the row
 			slices.SortFunc(r.blocks, func(a, b TextBlock) int {
 				if a.X < b.X {
 					return -1
@@ -95,62 +144,157 @@ func detectTablesOnPage(pl PageLayout) []Table {
 		return nil
 	}
 
-	// ── Step 3: build global column anchors from all candidate rows ──────────
-	var allX []float64
-	for _, row := range candidates {
-		for _, b := range row.blocks {
-			allX = append(allX, b.X)
+	// ── Step 3: group contiguous rows into separate table candidates ──────
+	var tables []Table
+	var currentGroup []candidateRow
+	for i, row := range candidates {
+		if i > 0 {
+			// If gap between rows is too large, finalize previous group.
+			// Standard line spacing is around FontSize (10-12pts).
+			// We use a threshold of 24pts to separate tables.
+			if currentGroup[len(currentGroup)-1].yVal-row.yVal > 24.0 {
+				if t := extractTableFromGroup(pl.Page, currentGroup); t != nil {
+					tables = append(tables, *t)
+				}
+				currentGroup = nil
+			}
+		}
+		currentGroup = append(currentGroup, row)
+	}
+	if t := extractTableFromGroup(pl.Page, currentGroup); t != nil {
+		tables = append(tables, *t)
+	}
+
+	// Cross-reference vector shapes to detect border styling per table
+	for i := range tables {
+		if hasBorder, color, width := inferTableBorder(tables[i], pl.Shapes); hasBorder {
+			tables[i].HasBorder = true
+			tables[i].BorderColor = color
+			tables[i].BorderWidth = width
 		}
 	}
-	colAnchors := clusterAnchors(allX, colTol)
-	if len(colAnchors) < minCols {
+
+	return tables
+}
+
+func extractTableFromGroup(page int, rows []candidateRow) *Table {
+	if len(rows) < minRows {
 		return nil
 	}
 
-	// ── Step 4: assign blocks to (row, col) and group into contiguous tables ─
+	// Build anchors from all blocks in this group
+	var allX []float64
+	for _, r := range rows {
+		for _, b := range r.blocks {
+			allX = append(allX, b.X)
+		}
+	}
+	anchors := clusterAnchors(allX, colTol)
+
+	// Filter anchors: must be used by at least 2 rows to be a "column"
+	usage := make([]int, len(anchors))
+	for _, r := range rows {
+		used := make(map[int]bool)
+		for _, b := range r.blocks {
+			if idx := nearestAnchor(b.X, anchors, colTol); idx >= 0 {
+				used[idx] = true
+			}
+		}
+		for idx := range used {
+			usage[idx]++
+		}
+	}
+
+	var filtered []float64
+	for i, count := range usage {
+		if count >= 2 {
+			filtered = append(filtered, anchors[i])
+		}
+	}
+	anchors = filtered
+
+	if len(anchors) < minCols {
+		return nil
+	}
+
+	// Assign cells and check density
 	type cellKey struct{ row, col int }
 	cellMap := make(map[cellKey][]string)
-
-	// Build one Table from all candidate rows.
-	tbl := Table{
-		Page: pl.Page,
-		Rows: len(candidates),
-		Cols: len(colAnchors),
-	}
+	styleMap := make(map[cellKey]TextStyle)
+	filledCount := 0
 
 	minX, minY := 1e9, 1e9
 	maxX, maxY := -1e9, -1e9
 
-	for rowIdx, row := range candidates {
-		for _, b := range row.blocks {
+	for rIdx, r := range rows {
+		for _, b := range r.blocks {
+			cIdx := nearestAnchor(b.X, anchors, colTol)
+			if cIdx < 0 {
+				continue
+			}
+			k := cellKey{rIdx, cIdx}
+			if _, exists := cellMap[k]; !exists {
+				filledCount++
+				styleMap[k] = b.Style // capture first block's style
+			}
+			cellMap[k] = append(cellMap[k], b.Text)
+
 			minX = min(minX, b.X)
 			minY = min(minY, b.Y)
 			maxX = max(maxX, b.X+b.Width)
 			maxY = max(maxY, b.Y+b.Height)
-
-			colIdx := nearestAnchor(b.X, colAnchors, colTol)
-			if colIdx < 0 {
-				continue
-			}
-			k := cellKey{rowIdx, colIdx}
-			cellMap[k] = append(cellMap[k], b.Text)
 		}
 	}
 
-	if len(cellMap) > 0 {
-		tbl.X = minX
-		tbl.Y = minY
-		tbl.Width = maxX - minX
-		tbl.Height = maxY - minY
+	// Final check: do we still have enough valid rows and columns?
+	validRows := 0
+	for rIdx := range rows {
+		rowCellCount := 0
+		for cIdx := range anchors {
+			if _, ok := cellMap[cellKey{rIdx, cIdx}]; ok {
+				rowCellCount++
+			}
+		}
+		if rowCellCount >= minCols {
+			validRows++
+		}
+	}
+
+	if validRows < minRows {
+		return nil
+	}
+
+	// Density check: filledCount / (rows * cols)
+	// Tables are expected to have a reasonable number of filled cells.
+	density := float64(filledCount) / float64(len(rows)*len(anchors))
+	if density < 0.4 {
+		return nil
+	}
+
+	// Max column gap check: if any gap between columns is too large, it's likely not a single table.
+	for i := 1; i < len(anchors); i++ {
+		if anchors[i]-anchors[i-1] > 150.0 { // 150 points is a huge gap for a table
+			return nil
+		}
+	}
+
+	tbl := Table{
+		Page:   page,
+		Rows:   len(rows),
+		Cols:   len(anchors),
+		X:      minX,
+		Y:      minY,
+		Width:  maxX - minX,
+		Height: maxY - minY,
 	}
 	for k, texts := range cellMap {
 		tbl.Cells = append(tbl.Cells, TableCell{
-			Row:  k.row,
-			Col:  k.col,
-			Text: strings.TrimSpace(strings.Join(texts, " ")),
+			Row:   k.row,
+			Col:   k.col,
+			Text:  strings.TrimSpace(strings.Join(texts, " ")),
+			Style: styleMap[k],
 		})
 	}
-	// Sort cells for deterministic order (row-major).
 	slices.SortFunc(tbl.Cells, func(a, b TableCell) int {
 		if a.Row != b.Row {
 			return a.Row - b.Row
@@ -158,7 +302,7 @@ func detectTablesOnPage(pl PageLayout) []Table {
 		return a.Col - b.Col
 	})
 
-	return []Table{tbl}
+	return &tbl
 }
 
 // clusterAnchors collapses nearby X values into representative column anchors.
@@ -166,8 +310,7 @@ func clusterAnchors(xs []float64, tol float64) []float64 {
 	if len(xs) == 0 {
 		return nil
 	}
-	sorted := make([]float64, len(xs))
-	copy(sorted, xs)
+	sorted := slices.Clone(xs)
 	slices.Sort(sorted)
 
 	var anchors []float64

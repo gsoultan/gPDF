@@ -11,3 +11,8 @@ go.sum
 /docs/PDF_2.0_coverage_notes.md
 /*.pdf
 /tests/doc/flow_wrap_test.pdf
+/.junie/gaps-analysis.md
+.junie
+.idea
+.cursor
+.

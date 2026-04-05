@@ -135,7 +135,7 @@ func deriveKey(password, o, pLE, id []byte, r, n int) []byte {
 	if r == 2 {
 		return digest[:5]
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		h = md5.New()
 		h.Write(digest[:n])
 		digest = h.Sum(nil)

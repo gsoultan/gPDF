@@ -396,7 +396,7 @@ func (p *ParserImpl) ParseXRefTable() (entries map[int]syntax.XRefEntry, err err
 			}
 			break
 		}
-		for i := 0; i < count; i++ {
+		for i := range count {
 			entryOffset := lineStart + int64(i*20)
 			buf := make([]byte, 20)
 			_, err := p.r.ReadAt(buf, entryOffset)

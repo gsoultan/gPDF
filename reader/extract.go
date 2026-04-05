@@ -537,6 +537,43 @@ func decodeWinAnsi(data []byte) string {
 	return out.String()
 }
 
+func resolveFontName(src contentSource, resources model.Dict, fontOperand model.Object) string {
+	fontName, ok := fontOperand.(model.Name)
+	if !ok || resources == nil {
+		return ""
+	}
+
+	fontResourceObj, ok := resources[model.Name("Font")]
+	if !ok {
+		return ""
+	}
+	fontResources, ok := resolveDictObject(src, fontResourceObj)
+	if !ok {
+		return ""
+	}
+	fontObj, ok := fontResources[fontName]
+	if !ok {
+		return ""
+	}
+
+	fontDict, _, ok := resolveDictWithRef(src, fontObj)
+	if !ok {
+		return ""
+	}
+
+	baseFont, ok := fontDict[model.Name("BaseFont")].(model.Name)
+	if ok {
+		name := string(baseFont)
+		if strings.Contains(name, "+") {
+			// Subset font name like ABCD+Helvetica-Bold
+			parts := strings.Split(name, "+")
+			return parts[len(parts)-1]
+		}
+		return name
+	}
+	return ""
+}
+
 func resolveFontDecoder(
 	src contentSource,
 	resources model.Dict,
