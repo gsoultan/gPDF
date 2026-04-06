@@ -35,7 +35,9 @@ if err != nil {
     log.Fatal(err)
 }
 
-err = pdf.SaveToFile("modified.pdf")
+f, _ := os.Create("modified.pdf")
+err = pdf.Save(f)
+f.Close()
 ```
 
 ### Table Detection
@@ -51,4 +53,41 @@ for _, pageTables := range tables {
         fmt.Printf("Table at (%f, %f)\n", table.X, table.Y)
     }
 }
+```
+ 
+### Merging PDFs
+
+```go
+doc1, _ := doc.Open("file1.pdf")
+doc2, _ := doc.Open("file2.pdf")
+defer doc1.Close()
+defer doc2.Close()
+
+merged, err := doc.Merge(doc1, doc2)
+if err != nil {
+    log.Fatal(err)
+}
+defer merged.Close()
+
+f, _ := os.Create("merged.pdf")
+merged.Save(f)
+f.Close()
+```
+
+### Merging from Remote Sources (URL/S3)
+
+You can open PDFs from any `io.ReaderAt` (like a memory buffer, URL, or S3 object):
+
+```go
+resp, _ := http.Get("https://example.com/file.pdf")
+data, _ := io.ReadAll(resp.Body)
+resp.Body.Close()
+
+// Open from memory
+reader := bytes.NewReader(data)
+pdf, _ := doc.OpenReader(reader, int64(len(data)))
+defer pdf.Close()
+
+// Merge with other documents
+merged, _ := doc.Merge(doc1, doc2, pdf)
 ```

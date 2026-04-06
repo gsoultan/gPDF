@@ -2,7 +2,6 @@ package file
 
 import (
 	"io"
-	"os"
 	"runtime"
 
 	"github.com/gsoultan/gpdf/model"
@@ -10,19 +9,19 @@ import (
 	"github.com/gsoultan/gpdf/writer"
 )
 
-// Document wraps a reader.Document and an open file, implementing doc.Document (Save, Close).
+// Document wraps a reader.Document and an optional closer, implementing doc.Document (Save, Close).
 type Document struct {
-	file *os.File
-	doc  reader.Document
-	w    writer.Writer
+	closer io.Closer
+	doc    reader.Document
+	w      writer.Writer
 }
 
-// NewDocument returns a Document that delegates read operations to doc and closes file on Close.
-func NewDocument(f *os.File, doc reader.Document) *Document {
+// NewDocument returns a Document that delegates read operations to doc and calls closer.Close on Close.
+func NewDocument(closer io.Closer, doc reader.Document) *Document {
 	d := &Document{
-		file: f,
-		doc:  doc,
-		w:    writer.NewPDFWriter(),
+		closer: closer,
+		doc:    doc,
+		w:      writer.NewPDFWriter(),
 	}
 	runtime.SetFinalizer(d, (*Document).finalize)
 	return d
@@ -137,13 +136,13 @@ func (d *Document) ObjectNumbers() []int {
 	return d.doc.ObjectNumbers()
 }
 
-// Close closes the underlying file. Idempotent.
+// Close closes the underlying resources. Idempotent.
 func (d *Document) Close() error {
 	runtime.SetFinalizer(d, nil)
-	if d.file == nil {
+	if d.closer == nil {
 		return nil
 	}
-	err := d.file.Close()
-	d.file = nil
+	err := d.closer.Close()
+	d.closer = nil
 	return err
 }
