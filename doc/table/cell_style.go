@@ -1,6 +1,6 @@
 package table
 
-import "gpdf/doc/style"
+import "github.com/gsoultan/gpdf/doc/style"
 
 // CellVerticalAlign controls vertical placement of content inside a table cell.
 type CellVerticalAlign string

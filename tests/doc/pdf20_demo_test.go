@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 // TestPDF20DemoLikeDocument builds a representative PDF 2.0 style document and

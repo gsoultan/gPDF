@@ -1,6 +1,6 @@
 package xobject
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Image wraps a stream that is an Image XObject (/Type /XObject, /Subtype /Image).
 // Use IsImageXObject to check before wrapping.

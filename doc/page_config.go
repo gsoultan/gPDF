@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // pageConfig holds page-related state for the builder.
 type pageConfig struct {

@@ -5,7 +5,7 @@ import (
 	"crypto/rc4"
 	"encoding/binary"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // BuildEncryptDictForWrite creates an Encrypt dictionary and an Encryptor for writing (Standard, R=2).
@@ -42,9 +42,9 @@ func BuildEncryptDictForWrite(userPassword, ownerPassword string, id []byte, P i
 	dict := model.Dict{
 		model.Name("Filter"): model.Name("Standard"),
 		model.Name("R"):      model.Integer(r),
-		model.Name("O"):     model.String(string(o)),
-		model.Name("U"):     model.String(string(u)),
-		model.Name("P"):     model.Integer(int64(P)),
+		model.Name("O"):      model.String(string(o)),
+		model.Name("U"):      model.String(string(u)),
+		model.Name("P"):      model.Integer(int64(P)),
 	}
 	dec := &StandardDecryptor{key: encKey, r: r, n: n}
 	return dict, dec, nil

@@ -1,6 +1,6 @@
 package syntax
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Parser parses PDF syntax into model objects and xref/trailer data.
 type Parser interface {

@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 func main() {

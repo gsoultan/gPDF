@@ -7,10 +7,10 @@ import (
 	"io"
 	"sort"
 
-	"gpdf/model"
-	"gpdf/security"
-	"gpdf/stream"
-	"gpdf/stream/defaults"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/security"
+	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/stream/defaults"
 )
 
 // PDFWriter implements Writer for PDF 2.0 output.

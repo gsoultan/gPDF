@@ -1,8 +1,8 @@
 package doc
 
 import (
-	imgpkg "gpdf/doc/image"
-	taggedpkg "gpdf/doc/tagged"
+	imgpkg "github.com/gsoultan/gpdf/doc/image"
+	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
 )
 
 // ImageOptions is a type alias for image.Options.

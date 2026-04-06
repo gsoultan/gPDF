@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"gpdf/content"
-	contentimpl "gpdf/content/impl"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	contentimpl "github.com/gsoultan/gpdf/content/impl"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // ReplaceContent replaces all occurrences of old with new in the document's content streams.

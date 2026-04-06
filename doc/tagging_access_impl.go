@@ -1,9 +1,9 @@
 package doc
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/doc/tagged"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/model"
 )
 
 var _ builder.TaggingAccess = (*DocumentBuilder)(nil)

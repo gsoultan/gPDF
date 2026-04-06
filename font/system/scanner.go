@@ -1,8 +1,8 @@
 package system
 
 import (
-	"gpdf/font"
-	"gpdf/font/truetype"
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/font/truetype"
 	"os"
 	"path/filepath"
 	"runtime"

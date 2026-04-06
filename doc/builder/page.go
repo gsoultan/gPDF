@@ -1,6 +1,6 @@
 package builder
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Page holds a page dict and collected content runs.
 type Page struct {

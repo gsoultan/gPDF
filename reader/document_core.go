@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
-	"gpdf/model"
-	"gpdf/security"
-	"gpdf/stream"
-	"gpdf/syntax/impl"
-	"gpdf/xref"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/security"
+	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/syntax/impl"
+	"github.com/gsoultan/gpdf/xref"
 )
 
 // documentCore holds the low-level state for resolving, caching, and decrypting

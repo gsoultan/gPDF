@@ -1,6 +1,6 @@
 package tagged
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Block describes one block-level tagged element (e.g. P, H1..H6) in the structure tree.
 // It refers to a single marked-content sequence on a page via MCID.

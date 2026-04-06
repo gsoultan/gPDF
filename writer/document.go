@@ -1,6 +1,6 @@
 package writer
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Document is the input to the writer: object graph and trailer (root, size).
 type Document interface {

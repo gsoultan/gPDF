@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/style"
+import "github.com/gsoultan/gpdf/doc/style"
 
 type LineCap = style.LineCap
 type LineJoin = style.LineJoin

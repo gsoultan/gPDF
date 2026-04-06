@@ -3,7 +3,7 @@ package writer
 import (
 	"fmt"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 const maxValidationDepth = 256

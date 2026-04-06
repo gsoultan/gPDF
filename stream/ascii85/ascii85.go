@@ -4,7 +4,7 @@ import (
 	a85 "encoding/ascii85"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for ASCII85Decode.

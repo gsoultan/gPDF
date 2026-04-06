@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"gpdf/doc/style"
-	taggedpkg "gpdf/doc/tagged"
-	"gpdf/doc/text"
-	"gpdf/font"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/doc/style"
+	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/doc/text"
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // DrawTextBox lays out text within a horizontal box on the given page.

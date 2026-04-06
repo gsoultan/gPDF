@@ -3,16 +3,16 @@ package xobject
 import (
 	"testing"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 func TestIsImageXObject(t *testing.T) {
 	s := &model.Stream{
 		Dict: model.Dict{
-			model.Name("Type"):     model.Name("XObject"),
-			model.Name("Subtype"):  model.Name("Image"),
-			model.Name("Width"):    model.Integer(100),
-			model.Name("Height"):   model.Integer(50),
+			model.Name("Type"):       model.Name("XObject"),
+			model.Name("Subtype"):    model.Name("Image"),
+			model.Name("Width"):      model.Integer(100),
+			model.Name("Height"):     model.Integer(50),
 			model.Name("ColorSpace"): model.Name("DeviceRGB"),
 		},
 		Content: []byte{},
@@ -39,7 +39,7 @@ func TestIsImageXObject(t *testing.T) {
 func TestIsFormXObject(t *testing.T) {
 	s := &model.Stream{
 		Dict: model.Dict{
-			model.Name("Type"):  model.Name("XObject"),
+			model.Name("Type"):    model.Name("XObject"),
 			model.Name("Subtype"): model.Name("Form"),
 			model.Name("BBox"): model.Array{
 				model.Integer(0), model.Integer(0),

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 func TestEncodeBytes(t *testing.T) {

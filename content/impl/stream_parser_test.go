@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"gpdf/content"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/model"
 )
 
 func TestStreamParser_Parse(t *testing.T) {

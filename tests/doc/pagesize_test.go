@@ -1,8 +1,8 @@
 package doc_test
 
 import (
-	"gpdf/doc"
-	"gpdf/doc/pagesize"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/doc/pagesize"
 	"testing"
 )
 

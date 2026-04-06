@@ -4,7 +4,7 @@ import (
 	clzw "compress/lzw"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for LZWDecode.

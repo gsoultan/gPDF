@@ -1,6 +1,6 @@
 package style
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // BlendMode names the PDF blend mode (ExtGState /BM value).
 type BlendMode string

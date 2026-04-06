@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/model"
-	"gpdf/reader"
-	"gpdf/writer"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/reader"
+	"github.com/gsoultan/gpdf/writer"
 )
 
 // builtDocument is an in-memory document produced by DocumentBuilder.

@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // CatalogReader provides access to the document catalog, page tree, info dict, and metadata.
 type CatalogReader interface {

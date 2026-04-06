@@ -1,9 +1,9 @@
 package text
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/doc/style"
-	btext "gpdf/doc/text"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/style"
+	btext "github.com/gsoultan/gpdf/doc/text"
 )
 
 // Drawer handles text drawing operations on PDF pages.

@@ -1,8 +1,8 @@
 package imgdraw
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/tagged"
 )
 
 // Drawer draws images onto PDF pages via PageAccess.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────

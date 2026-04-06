@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"sort"
 
-	"gpdf/font"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // embeddedFontUsage tracks rune usage for one registered embeddable font.

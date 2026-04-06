@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 type WriterOptions struct {
@@ -16,7 +16,7 @@ type WriterOptions struct {
 func DefaultWriterOptions() WriterOptions {
 	return WriterOptions{
 		RandomSource:  rand.Reader,
-		ValidateGraph: boolRef(true),
+		ValidateGraph: new(true),
 	}
 }
 

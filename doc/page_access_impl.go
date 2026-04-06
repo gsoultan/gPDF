@@ -1,8 +1,8 @@
 package doc
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/font"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/font"
 )
 
 var _ builder.PageAccess = (*DocumentBuilder)(nil)

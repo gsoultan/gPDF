@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // aes256Decryptor mirrors aes256Encryptor for the read path.

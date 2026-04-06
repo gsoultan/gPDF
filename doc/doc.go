@@ -3,11 +3,11 @@ package doc
 import (
 	"os"
 
-	bldrgfx "gpdf/doc/builder/graphics"
-	bldrimg "gpdf/doc/builder/imgdraw"
-	bldrtext "gpdf/doc/builder/text"
-	"gpdf/reader"
-	"gpdf/reader/file"
+	bldrgfx "github.com/gsoultan/gpdf/doc/builder/graphics"
+	bldrimg "github.com/gsoultan/gpdf/doc/builder/imgdraw"
+	bldrtext "github.com/gsoultan/gpdf/doc/builder/text"
+	"github.com/gsoultan/gpdf/reader"
+	"github.com/gsoultan/gpdf/reader/file"
 )
 
 // Open opens an existing PDF from path and returns a Document.

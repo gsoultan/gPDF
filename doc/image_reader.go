@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/reader"
+import "github.com/gsoultan/gpdf/reader"
 
 // ImageReader extracts image metadata and raw bytes from a PDF document.
 type ImageReader interface {

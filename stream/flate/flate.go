@@ -4,7 +4,7 @@ import (
 	"compress/zlib"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for FlateDecode (zlib/deflate).

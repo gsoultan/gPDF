@@ -1,6 +1,6 @@
 package layer
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Handle is a lightweight handle to an optional content group (OCG).
 // Store and reuse when drawing into the same layer across multiple pages.

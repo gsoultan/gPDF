@@ -7,8 +7,8 @@ import (
 	"image/png"
 	"testing"
 
-	"gpdf/doc"
-	"gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/doc/style"
 )
 
 func createTestImage(w, h int) []byte {

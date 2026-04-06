@@ -1,9 +1,9 @@
 package doc
 
 import (
-	"gpdf/doc/image"
-	"gpdf/doc/style"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/doc/image"
+	"github.com/gsoultan/gpdf/doc/style"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // Page represents a single page in the document and provides a fluent API for drawing on it.

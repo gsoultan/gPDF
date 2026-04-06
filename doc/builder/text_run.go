@@ -1,6 +1,6 @@
 package builder
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // TextRun describes one text draw on a page.
 type TextRun struct {

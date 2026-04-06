@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // Standard padding string per PDF 1.7 Algorithm 2.

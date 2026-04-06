@@ -5,9 +5,9 @@ import (
 	"os"
 	"runtime"
 
-	"gpdf/model"
-	"gpdf/reader"
-	"gpdf/writer"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/reader"
+	"github.com/gsoultan/gpdf/writer"
 )
 
 // Document wraps a reader.Document and an open file, implementing doc.Document (Save, Close).

@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // ObjectResolver resolves indirect object references and enumerates object numbers.
 type ObjectResolver interface {

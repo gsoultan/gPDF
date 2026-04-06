@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/text"
+import "github.com/gsoultan/gpdf/doc/text"
 
 type TextAlign = text.Align
 type TextLayoutOptions = text.LayoutOptions

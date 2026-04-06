@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 func resolvePageSize(page model.Page) PageSize {
 	box, boxName := effectivePageBox(page)

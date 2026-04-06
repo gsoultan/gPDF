@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // StructureProvider exposes the tagged PDF structure tree (PDF 1.4+, enhanced in PDF 2.0).
 type StructureProvider interface {

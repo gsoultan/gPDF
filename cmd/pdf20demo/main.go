@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 // pdf20demo builds a PDF 2.0–oriented demo document showcasing:

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // Encoder writes content stream operators to PDF content stream syntax.

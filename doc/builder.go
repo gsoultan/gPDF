@@ -1,17 +1,17 @@
 package doc
 
 import (
-	bldrgfx "gpdf/doc/builder/graphics"
-	bldrimg "gpdf/doc/builder/imgdraw"
-	bldrtext "gpdf/doc/builder/text"
-	"gpdf/doc/form"
-	"gpdf/doc/layer"
-	"gpdf/doc/metadata"
-	"gpdf/doc/outline"
-	"gpdf/doc/pagesize"
-	taggedpkg "gpdf/doc/tagged"
-	"gpdf/font"
-	"gpdf/model"
+	bldrgfx "github.com/gsoultan/gpdf/doc/builder/graphics"
+	bldrimg "github.com/gsoultan/gpdf/doc/builder/imgdraw"
+	bldrtext "github.com/gsoultan/gpdf/doc/builder/text"
+	"github.com/gsoultan/gpdf/doc/form"
+	"github.com/gsoultan/gpdf/doc/layer"
+	"github.com/gsoultan/gpdf/doc/metadata"
+	"github.com/gsoultan/gpdf/doc/outline"
+	"github.com/gsoultan/gpdf/doc/pagesize"
+	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // DocumentBuilder builds a new PDF via a fluent API. Call Build() to produce a Document.

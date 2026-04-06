@@ -1,8 +1,8 @@
 package graphics
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/style"
 )
 
 // Drawer draws vector shapes onto PDF pages via PageAccess.

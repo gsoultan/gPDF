@@ -3,9 +3,9 @@ package doc
 import (
 	"fmt"
 
-	"gpdf/content"
-	"gpdf/doc/builder"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/model"
 )
 
 type graphicRun = builder.GraphicRun

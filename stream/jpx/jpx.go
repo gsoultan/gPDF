@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for JPXDecode (JPEG 2000).

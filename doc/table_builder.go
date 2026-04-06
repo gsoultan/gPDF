@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"math"
 
-	"gpdf/doc/image"
-	"gpdf/doc/style"
-	"gpdf/doc/table"
-	"gpdf/doc/tagged"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/doc/image"
+	"github.com/gsoultan/gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc/table"
+	"github.com/gsoultan/gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/model"
 )
 
 const (

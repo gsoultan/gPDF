@@ -1,17 +1,17 @@
 package defaults
 
 import (
-	"gpdf/stream"
-	"gpdf/stream/ascii85"
-	"gpdf/stream/asciihex"
-	"gpdf/stream/ccitt"
-	"gpdf/stream/crypt"
-	"gpdf/stream/dct"
-	"gpdf/stream/flate"
-	"gpdf/stream/jbig2"
-	"gpdf/stream/jpx"
-	"gpdf/stream/lzw"
-	"gpdf/stream/runlength"
+	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/stream/ascii85"
+	"github.com/gsoultan/gpdf/stream/asciihex"
+	"github.com/gsoultan/gpdf/stream/ccitt"
+	"github.com/gsoultan/gpdf/stream/crypt"
+	"github.com/gsoultan/gpdf/stream/dct"
+	"github.com/gsoultan/gpdf/stream/flate"
+	"github.com/gsoultan/gpdf/stream/jbig2"
+	"github.com/gsoultan/gpdf/stream/jpx"
+	"github.com/gsoultan/gpdf/stream/lzw"
+	"github.com/gsoultan/gpdf/stream/runlength"
 )
 
 // RegisterStandardFilters registers all standard PDF filters in the given registry.

@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // OutlineProvider exposes the document outline (bookmarks) tree.
 type OutlineProvider interface {

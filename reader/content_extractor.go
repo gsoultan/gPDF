@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // ContentExtractor extracts text, searches keywords, and replaces text in content streams.
 type ContentExtractor interface {

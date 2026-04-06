@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // Build returns a Document that can be saved. The document is in-memory.

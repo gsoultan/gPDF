@@ -1,8 +1,8 @@
 package builder
 
 import (
-	"gpdf/font"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // PageAccess provides sub-builders with controlled access to page state.

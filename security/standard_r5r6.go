@@ -3,7 +3,7 @@ package security
 import (
 	"fmt"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // newStandardR5R6Decryptor builds a decryptor for R=5 (PDF 1.7 ext 3) and R=6 (PDF 2.0).

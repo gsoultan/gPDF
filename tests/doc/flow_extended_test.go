@@ -1,7 +1,7 @@
 package doc_test
 
 import (
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 	"testing"
 )
 

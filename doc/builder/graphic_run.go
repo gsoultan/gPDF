@@ -1,8 +1,8 @@
 package builder
 
 import (
-	"gpdf/content"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // GraphicRun holds pre-built content stream operators for one vector drawing operation.

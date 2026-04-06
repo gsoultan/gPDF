@@ -3,8 +3,8 @@ package reader
 import (
 	"io"
 
-	"gpdf/model"
-	"gpdf/syntax/impl"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/syntax/impl"
 )
 
 // LinearizationInfo holds the parsed linearization dictionary from a linearized PDF.

@@ -3,9 +3,9 @@ package reader
 import (
 	"slices"
 
-	"gpdf/content"
-	contentimpl "gpdf/content/impl"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	contentimpl "github.com/gsoultan/gpdf/content/impl"
+	"github.com/gsoultan/gpdf/model"
 )
 
 type vectorExtractor struct {

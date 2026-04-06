@@ -1,6 +1,6 @@
 package outline
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Entry describes one document outline (bookmark).
 type Entry struct {

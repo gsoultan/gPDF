@@ -21,8 +21,8 @@ import (
 	"os"
 	"strings"
 
-	"gpdf/model"
-	"gpdf/reader"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/reader"
 )
 
 // multiFlag allows -search to be specified multiple times.

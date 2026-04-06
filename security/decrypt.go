@@ -1,6 +1,6 @@
 package security
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Decryptor decrypts PDF strings and streams for a given object reference.
 type Decryptor interface {

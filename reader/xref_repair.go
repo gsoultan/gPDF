@@ -6,7 +6,7 @@ import (
 	"io"
 	"strconv"
 
-	"gpdf/syntax"
+	"github.com/gsoultan/gpdf/syntax"
 )
 
 const (

@@ -1,10 +1,10 @@
 package doc
 
 import (
-	"gpdf/doc/image"
-	"gpdf/doc/style"
-	"gpdf/doc/text"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/doc/image"
+	"github.com/gsoultan/gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc/text"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // FloatingImage represents an image that text should wrap around.

@@ -8,7 +8,7 @@ import (
 	"image/png"
 	"os"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 // This example builds a more complex "quotation" style PDF document

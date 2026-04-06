@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"testing"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 // ── Color ────────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import (
 	"crypto/rc4"
 	"fmt"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // r4Method names the crypt method for a given CF entry.

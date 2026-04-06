@@ -3,8 +3,8 @@ package impl
 import (
 	"fmt"
 
-	"gpdf/content"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // StreamParser parses PDF content stream bytes into a sequence of content.Op.

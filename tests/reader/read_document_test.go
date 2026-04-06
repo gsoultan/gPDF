@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/doc"
-	"gpdf/model"
-	"gpdf/reader"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/reader"
 )
 
 func TestReadDocumentWithPasswordDecryptsInfoStrings(t *testing.T) {

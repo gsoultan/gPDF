@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"gpdf/content"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // buildGraphicsOps returns content stream ops from graphic runs (backgrounds, lines, shapes).

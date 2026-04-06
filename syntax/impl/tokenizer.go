@@ -6,7 +6,7 @@ import (
 	"io"
 	"strconv"
 
-	"gpdf/syntax"
+	"github.com/gsoultan/gpdf/syntax"
 )
 
 // tokenizer produces PDF tokens from a reader. It supports reset to a new position for random access.

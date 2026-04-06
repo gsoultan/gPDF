@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 type writerTestDoc struct {

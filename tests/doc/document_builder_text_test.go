@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 func TestDrawTextBox_WrapsIntoMultipleLines(t *testing.T) {

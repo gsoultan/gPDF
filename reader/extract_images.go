@@ -7,9 +7,9 @@ import (
 	"io"
 	"math"
 
-	"gpdf/content"
-	contentimpl "gpdf/content/impl"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	contentimpl "github.com/gsoultan/gpdf/content/impl"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // ExtractImages returns all ImageInfo records across all pages (in page order).

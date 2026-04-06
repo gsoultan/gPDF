@@ -1,5 +1,5 @@
 package doc
 
-import "gpdf/doc/builder"
+import "github.com/gsoultan/gpdf/doc/builder"
 
 type pageSpec = builder.Page

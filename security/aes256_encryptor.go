@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // aes256Encryptor implements Encryptor using AES-256-CBC with a per-object IV.

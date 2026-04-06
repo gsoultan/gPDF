@@ -3,7 +3,7 @@ package reader
 import (
 	"strings"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 type fontInfo struct {

@@ -2,7 +2,7 @@ package reader
 
 import (
 	"fmt"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // ── MetadataProvider ────────────────────────────────────────────────────────

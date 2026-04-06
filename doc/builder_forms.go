@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/form"
+import "github.com/gsoultan/gpdf/doc/form"
 
 // AddTextField adds a text form field (/FT /Tx) with an associated widget annotation on the given page.
 // The rectangle is in user space (llx, lly, urx, ury). name is the field name; value is the default value.

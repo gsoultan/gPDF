@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/pagesize"
+import "github.com/gsoultan/gpdf/doc/pagesize"
 
 // Standard page sizes shortcuts for DocumentBuilder.
 

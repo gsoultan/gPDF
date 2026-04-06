@@ -1,6 +1,6 @@
 package table
 
-import "gpdf/doc/style"
+import "github.com/gsoultan/gpdf/doc/style"
 
 // CellImageSpec describes an image to be placed inside a table cell.
 type CellImageSpec struct {

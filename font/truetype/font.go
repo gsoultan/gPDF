@@ -2,7 +2,7 @@ package truetype
 
 import (
 	"encoding/binary"
-	"gpdf/font"
+	"github.com/gsoultan/gpdf/font"
 )
 
 // Font is a parsed TrueType font providing glyph metrics and character mapping.

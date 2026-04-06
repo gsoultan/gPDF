@@ -1,8 +1,8 @@
 package doc
 
 import (
-	"gpdf/doc/builder"
-	"gpdf/doc/table"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/table"
 )
 
 type imageRun = builder.ImageRun

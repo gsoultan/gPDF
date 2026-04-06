@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // FormProvider exposes the AcroForm interactive form fields.
 type FormProvider interface {

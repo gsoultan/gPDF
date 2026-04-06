@@ -1,6 +1,6 @@
 package form
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // FieldKind identifies the general kind of AcroForm field.
 type FieldKind int

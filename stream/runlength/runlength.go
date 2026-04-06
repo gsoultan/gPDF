@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 const eodMarker = 128

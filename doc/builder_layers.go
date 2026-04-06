@@ -1,9 +1,9 @@
 package doc
 
 import (
-	"gpdf/content"
-	"gpdf/doc/layer"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/doc/layer"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // BeginLayer starts drawing into a named optional content group (OCG). All

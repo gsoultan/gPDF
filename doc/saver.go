@@ -3,7 +3,7 @@ package doc
 import (
 	"io"
 
-	"gpdf/writer"
+	"github.com/gsoultan/gpdf/writer"
 )
 
 // Saver writes a PDF document in various formats and encryption modes.

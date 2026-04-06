@@ -1,6 +1,6 @@
 package tagged
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // inSection returns whether the given content index belongs to any section.
 func inSection(sections []Section, blockIdx, figureIdx, tableIdx, listIdx int, kind byte) bool {

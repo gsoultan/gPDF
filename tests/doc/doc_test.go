@@ -7,9 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	"gpdf/doc"
-	"gpdf/model"
-	"gpdf/writer"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/writer"
 )
 
 func TestNewAndSave(t *testing.T) {

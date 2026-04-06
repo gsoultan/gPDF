@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"gpdf/font"
+	"github.com/gsoultan/gpdf/font"
 )
 
 var standardSubstitutions = map[string]string{

@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/style"
+import "github.com/gsoultan/gpdf/doc/style"
 
 type ICCProfile = style.ICCProfile
 

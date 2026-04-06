@@ -6,8 +6,8 @@ import (
 	"io"
 	"strconv"
 
-	"gpdf/model"
-	"gpdf/syntax"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/syntax"
 )
 
 // ParserImpl parses PDF syntax from a reader supporting random access.

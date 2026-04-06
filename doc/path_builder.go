@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"gpdf/content"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // PathBuilder accumulates path construction operators for a single drawing on a page.

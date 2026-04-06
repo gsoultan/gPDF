@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // CatalogProvider gives access to the document catalog, page tree, info dict,
 // metadata, trailer, PDF version, and linearization information.

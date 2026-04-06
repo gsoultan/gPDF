@@ -11,9 +11,9 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"gpdf/content"
-	contentimpl "gpdf/content/impl"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	contentimpl "github.com/gsoultan/gpdf/content/impl"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // contentSource is the minimal interface needed to extract text from a PDF document.
@@ -917,8 +917,7 @@ func resolveStreamObject(src contentSource, obj model.Object) (*model.Stream, *m
 		}
 		return v, nil, true
 	case model.Stream:
-		s := v
-		return &s, nil, true
+		return new(v), nil, true
 	}
 	return nil, nil, false
 }

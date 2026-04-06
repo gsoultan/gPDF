@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/model"
-	"gpdf/security"
-	"gpdf/stream"
-	"gpdf/stream/defaults"
-	"gpdf/syntax"
-	"gpdf/syntax/impl"
-	"gpdf/xref"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/security"
+	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/stream/defaults"
+	"github.com/gsoultan/gpdf/syntax"
+	"github.com/gsoultan/gpdf/syntax/impl"
+	"github.com/gsoultan/gpdf/xref"
 )
 
 var (

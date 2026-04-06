@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 func TestTableAdvancedFeatures(t *testing.T) {

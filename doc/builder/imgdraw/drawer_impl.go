@@ -3,9 +3,9 @@ package imgdraw
 import (
 	"fmt"
 
-	"gpdf/doc/builder"
-	imgpkg "gpdf/doc/image"
-	"gpdf/doc/tagged"
+	"github.com/gsoultan/gpdf/doc/builder"
+	imgpkg "github.com/gsoultan/gpdf/doc/image"
+	"github.com/gsoultan/gpdf/doc/tagged"
 )
 
 type drawer struct{}

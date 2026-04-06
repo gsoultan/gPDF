@@ -3,7 +3,7 @@ package security
 import (
 	"testing"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 func TestNewStandardDecryptor_InvalidFilter(t *testing.T) {

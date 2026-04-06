@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 func TestReadContent_OpenReadContentClose(t *testing.T) {

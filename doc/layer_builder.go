@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/doc/layer"
+import "github.com/gsoultan/gpdf/doc/layer"
 
 // LayerBuilder controls optional content groups (layers).
 type LayerBuilder interface {

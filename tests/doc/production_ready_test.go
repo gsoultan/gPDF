@@ -1,8 +1,8 @@
 package doc_test
 
 import (
-	"gpdf/doc"
-	"gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/doc/style"
 	"testing"
 )
 

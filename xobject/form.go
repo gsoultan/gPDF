@@ -1,6 +1,6 @@
 package xobject
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Form wraps a stream that is a Form XObject (/Type /XObject, /Subtype /Form).
 // Use IsFormXObject to check before wrapping.

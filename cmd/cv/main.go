@@ -18,8 +18,8 @@ import (
 	"image/jpeg"
 	"os"
 
-	"gpdf/doc"
-	"gpdf/doc/style"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/doc/style"
 )
 
 func main() {

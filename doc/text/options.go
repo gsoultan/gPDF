@@ -1,6 +1,6 @@
 package text
 
-import "gpdf/doc/style"
+import "github.com/gsoultan/gpdf/doc/style"
 
 // Align describes horizontal alignment for laid-out text.
 type Align int

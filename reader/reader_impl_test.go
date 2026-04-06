@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"gpdf/model"
-	"gpdf/syntax/impl"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/syntax/impl"
 )
 
 func minimalPDFBytes() []byte {

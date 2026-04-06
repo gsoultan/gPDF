@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for the Crypt filter (PDF 1.5+).

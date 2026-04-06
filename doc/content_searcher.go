@@ -1,6 +1,6 @@
 package doc
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // ContentSearcher searches for keywords and replaces text within content streams.
 type ContentSearcher interface {

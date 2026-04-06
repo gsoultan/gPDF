@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"gpdf/doc"
-	"gpdf/font"
+	"github.com/gsoultan/gpdf/doc"
+	"github.com/gsoultan/gpdf/font"
 )
 
 type mockFont struct {

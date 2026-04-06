@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // resolveFirstPageRef resolves catalog->Pages->Kids to the first page ref and page count.

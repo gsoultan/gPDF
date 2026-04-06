@@ -1,6 +1,6 @@
 package security
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Encryptor encrypts PDF strings and streams for a given object reference (used when writing).
 type Encryptor interface {

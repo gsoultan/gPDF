@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"gpdf/stream"
+	"github.com/gsoultan/gpdf/stream"
 )
 
 // Filter implements stream.Filter for ASCIIHexDecode.

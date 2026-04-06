@@ -3,8 +3,8 @@ package doc
 import (
 	"fmt"
 
-	imgpkg "gpdf/doc/image"
-	taggedpkg "gpdf/doc/tagged"
+	imgpkg "github.com/gsoultan/gpdf/doc/image"
+	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
 )
 
 func (b *DocumentBuilder) addImageRun(pageIndex int, run imageRun) *DocumentBuilder {

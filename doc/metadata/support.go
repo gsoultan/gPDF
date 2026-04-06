@@ -1,6 +1,6 @@
 package metadata
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // Support owns document metadata fields for a document builder.
 type Support struct {

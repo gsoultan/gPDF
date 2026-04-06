@@ -3,9 +3,9 @@ package reader
 import (
 	"strings"
 
-	"gpdf/content"
-	contentimpl "gpdf/content/impl"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	contentimpl "github.com/gsoultan/gpdf/content/impl"
+	"github.com/gsoultan/gpdf/model"
 )
 
 // ExtractLayout returns one PageLayout per page, each containing positioned TextBlocks.

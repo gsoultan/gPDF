@@ -3,10 +3,10 @@ package graphics
 import (
 	"fmt"
 
-	"gpdf/content"
-	"gpdf/doc/builder"
-	"gpdf/doc/style"
-	"gpdf/model"
+	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/doc/builder"
+	"github.com/gsoultan/gpdf/doc/style"
+	"github.com/gsoultan/gpdf/model"
 )
 
 const circleControlFactor = 0.5522847498

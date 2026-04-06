@@ -1,6 +1,6 @@
 package reader
 
-import "gpdf/model"
+import "github.com/gsoultan/gpdf/model"
 
 // MetadataProvider exposes document-level metadata streams and associated file collections.
 type MetadataProvider interface {

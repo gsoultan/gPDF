@@ -12,7 +12,7 @@ import (
 	"os"
 	"strings"
 
-	"gpdf/doc"
+	"github.com/gsoultan/gpdf/doc"
 )
 
 func main() {

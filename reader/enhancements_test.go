@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"gpdf/model"
-	"gpdf/stream"
-	"gpdf/stream/asciihex"
+	"github.com/gsoultan/gpdf/model"
+	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/stream/asciihex"
 )
 
 func TestStrictModeRejectsMissingStartXRef(t *testing.T) {
