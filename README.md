@@ -9,6 +9,7 @@ A library for reading, searching, and modifying PDF documents.
 - **Modify**: Replace text content and save back to PDF.
 - **Table Detection**: Identify table-like structures in PDF layouts.
 - **Image Extraction**: Extract images from PDF pages with color space conversion support.
+- **Merge & Split**: Combine multiple PDFs into one or split a PDF into several documents.
 
 ## Usage
 
@@ -71,6 +72,44 @@ defer merged.Close()
 
 f, _ := os.Create("merged.pdf")
 merged.Save(f)
+f.Close()
+```
+
+### Splitting PDFs
+
+```go
+src, _ := doc.Open("input.pdf")
+defer src.Close()
+
+// Split into multiple documents, each containing at most 1 page
+splitDocs, err := doc.SplitEvery(src, 1)
+if err != nil {
+    log.Fatal(err)
+}
+
+for i, splitDoc := range splitDocs {
+    defer splitDoc.Close()
+    f, _ := os.Create(fmt.Sprintf("split_%d.pdf", i))
+    splitDoc.Save(f)
+    f.Close()
+}
+```
+
+### Extracting Pages
+
+```go
+src, _ := doc.Open("input.pdf")
+defer src.Close()
+
+// Extract pages 1-3 (inclusive-exclusive range: [1, 3))
+extracted, err := doc.Extract(src, 1, 3)
+if err != nil {
+    log.Fatal(err)
+}
+defer extracted.Close()
+
+f, _ := os.Create("extracted.pdf")
+extracted.Save(f)
 f.Close()
 ```
 
